@@ -1,28 +1,53 @@
-# VM-tipset 2026
+# VM-tipset 2026 – Version 4
 
-Uppdaterad version:
+Den här versionen synkar datamodellen mellan hemsidan, `app.js`, `apps-script.gs` och Google Sheets.
 
-- Deltagare tippar endast 16-delsfinalerna med 1X2 + exakt resultat.
-- Inga matchresultat tippas efter 16-delsfinalerna.
-- Bonus: 4 semifinallag, guld, silver, brons och minut för första gula kortet i finalen.
-- Poäng:
-  - 1 poäng för rätt 1X2 i 16-delsfinal.
-  - 2 poäng för exakt resultat i 16-delsfinal.
-  - 2 poäng per rätt lag i semifinal.
-  - 5 poäng för rätt guld.
-  - 4 poäng för rätt silver.
-  - 3 poäng för rätt brons.
-- Spelträdet visar hela slutspelet och uppdateras med resultat.
-- Autospar finns kvar så osparade tips inte försvinner medan man skriver.
+## Viktiga ändringar
 
-## Filer
+- En knapp: **Spara allt**.
+- Matchtips och bonus sparas samtidigt till Google Sheets.
+- Bonusfält töms/laddas om när man byter namn, så Siris tips ligger inte kvar när man skriver André.
+- Bonusmodellen är nu:
+  - `semi1`
+  - `semi2`
+  - `semi3`
+  - `semi4`
+  - `firstPlace`
+  - `secondPlace`
+  - `thirdPlace`
+  - `firstYellowMinute`
+- Apps Script skapar saknade kolumner automatiskt.
 
-Ladda upp filerna till GitHub Pages-repot och ersätt de gamla:
+## Viktigt vid uppdatering
 
-- `index.html`
-- `style.css`
-- `app.js`
-- `apps-script.gs`
-- `README.md`
+1. Ladda upp/ersätt dessa filer i GitHub:
+   - `index.html`
+   - `style.css`
+   - `app.js`
+   - `README.md`
 
-Om Safari visar gammal version: testa `Cmd + Option + E` och ladda om sidan, eller öppna sidan med `?v=ny` på slutet.
+2. Öppna Google Apps Script och ersätt hela koden med nya `apps-script.gs`.
+
+3. Publicera om Apps Script:
+   - Deploy
+   - Manage deployments
+   - Edit
+   - New version
+   - Deploy
+
+4. Öppna Google Sheet. Arket **Bonus** ska ha dessa kolumner:
+
+```text
+player_id | semi1 | semi2 | semi3 | semi4 | firstPlace | secondPlace | thirdPlace | firstYellowMinute
+```
+
+Om gamla kolumner som `finalist1`, `finalist2`, `topScorer` finns kvar kan de ligga kvar, men de används inte längre. Efter nästa sparning skrivs Bonus om enligt nya strukturen.
+
+## Poängregler
+
+- 2p för exakt resultat i 16-delsfinal.
+- 1p för rätt 1X2 i 16-delsfinal.
+- 2p per rätt semifinallag, oavsett ordning.
+- 3p rätt brons.
+- 4p rätt silver.
+- 5p rätt guld.

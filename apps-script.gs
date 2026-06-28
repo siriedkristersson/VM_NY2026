@@ -39,29 +39,56 @@ function doPost(e) {
 function doGet() { return json(getAll()); }
 function json(obj){ return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
 function ss(){ return SpreadsheetApp.openById(SPREADSHEET_ID); }
-function sheet(name, headers){ const s=ss().getSheetByName(name) || ss().insertSheet(name); if(s.getLastRow()===0) s.appendRow(headers); return s; }
+function sheet(name, headers){
+  const s=ss().getSheetByName(name) || ss().insertSheet(name);
+  if(s.getLastRow()===0){ s.appendRow(headers); return s; }
+  const existing = s.getRange(1,1,1,Math.max(1,s.getLastColumn())).getValues()[0].map(String);
+  const missing = headers.filter(h => existing.indexOf(h) === -1);
+  if(missing.length){
+    s.getRange(1, existing.length + 1, 1, missing.length).setValues([missing]);
+  }
+  return s;
+}
 function write(name, headers, rows){ const s=sheet(name,headers); s.clear(); s.appendRow(headers); if(rows.length) s.getRange(2,1,rows.length,headers.length).setValues(rows); }
-function read(name){ const s=ss().getSheetByName(name); if(!s || s.getLastRow()<2) return []; const values=s.getDataRange().getValues(); const headers=values.shift(); return values.map(row=>Object.fromEntries(headers.map((h,i)=>[h,row[i]]))); }
+function read(name, expectedHeaders){
+  if(expectedHeaders) sheet(name, expectedHeaders);
+  const s=ss().getSheetByName(name);
+  if(!s || s.getLastRow()<2) return [];
+  const values=s.getDataRange().getValues();
+  const headers=values.shift().map(String);
+  return values.map(row=>Object.fromEntries(headers.map((h,i)=>[h,row[i]])));
+}
+
+const SCHEMAS = {
+  Players:['player_id','name','email','created_at'],
+  Predictions:['player_id','match_id','pred_outcome','pred_home','pred_away','submitted_at'],
+  Bonus:['player_id','semi1','semi2','semi3','semi4','firstPlace','secondPlace','thirdPlace','firstYellowMinute'],
+  Results:['match_id','home','away','home_score','away_score','status','winner'],
+  ActualBonus:['semi1','semi2','semi3','semi4','firstPlace','secondPlace','thirdPlace','firstYellowMinute']
+};
+function ensureSchemas_(){ Object.keys(SCHEMAS).forEach(name => sheet(name, SCHEMAS[name])); }
 
 function saveAll(data){
-  write('Players',['player_id','name','email','created_at'], (data.players||[]).map(p=>[p.id,p.name,p.email,p.created_at]));
-  write('Predictions',['player_id','match_id','pred_outcome','pred_home','pred_away','submitted_at'], (data.predictions||[]).map(p=>[p.player_id,p.match_id,p.pred_outcome||'',p.pred_home,p.pred_away,p.submitted_at]));
-  write('Bonus',['player_id','semi1','semi2','semi3','semi4','firstPlace','secondPlace','thirdPlace','firstYellowMinute'], (data.bonus||[]).map(b=>[b.player_id,b.semi1||'',b.semi2||'',b.semi3||'',b.semi4||'',b.firstPlace||'',b.secondPlace||'',b.thirdPlace||'',b.firstYellowMinute||b.finalGoalMinute||'']));
+  ensureSchemas_();
+  write('Players',SCHEMAS.Players, (data.players||[]).map(p=>[p.id,p.name,p.email,p.created_at]));
+  write('Predictions',SCHEMAS.Predictions, (data.predictions||[]).map(p=>[p.player_id,p.match_id,p.pred_outcome||'',p.pred_home,p.pred_away,p.submitted_at]));
+  write('Bonus',SCHEMAS.Bonus, (data.bonus||[]).map(b=>[b.player_id,b.semi1||'',b.semi2||'',b.semi3||'',b.semi4||'',b.firstPlace||'',b.secondPlace||'',b.thirdPlace||'',b.firstYellowMinute||b.finalGoalMinute||'']));
   const results = data.results || {};
-  write('Results',['match_id','home','away','home_score','away_score','status','winner'], Object.keys(results).map(id=>[id,results[id].home||'',results[id].away||'',results[id].home_score,results[id].away_score,results[id].status,results[id].winner||'']));
+  write('Results',SCHEMAS.Results, Object.keys(results).map(id=>[id,results[id].home||'',results[id].away||'',results[id].home_score,results[id].away_score,results[id].status,results[id].winner||'']));
   const a=data.actualBonus||{};
-  write('ActualBonus',['semi1','semi2','semi3','semi4','firstPlace','secondPlace','thirdPlace','firstYellowMinute'], [[a.semi1||'',a.semi2||'',a.semi3||'',a.semi4||'',a.firstPlace||'',a.secondPlace||'',a.thirdPlace||'',a.firstYellowMinute||a.finalGoalMinute||'']]);
+  write('ActualBonus',SCHEMAS.ActualBonus, [[a.semi1||'',a.semi2||'',a.semi3||'',a.semi4||'',a.firstPlace||'',a.secondPlace||'',a.thirdPlace||'',a.firstYellowMinute||a.finalGoalMinute||'']]);
   writeScoreboard_(data);
   return {ok:true};
 }
 
 function getAll(){
-  const players = read('Players').map(p=>({id:String(p.player_id), name:p.name, email:p.email, created_at:p.created_at}));
-  const predictions = read('Predictions').map(p=>({player_id:String(p.player_id), match_id:String(p.match_id), pred_outcome:p.pred_outcome||'', pred_home:p.pred_home, pred_away:p.pred_away, submitted_at:p.submitted_at}));
-  const bonus = read('Bonus').map(b=>({player_id:String(b.player_id), semi1:b.semi1||'', semi2:b.semi2||'', semi3:b.semi3||'', semi4:b.semi4||'', firstPlace:b.firstPlace||'', secondPlace:b.secondPlace||'', thirdPlace:b.thirdPlace||'', firstYellowMinute:b.firstYellowMinute||b.finalGoalMinute||''}));
+  ensureSchemas_();
+  const players = read('Players', SCHEMAS.Players).map(p=>({id:String(p.player_id), name:p.name, email:p.email, created_at:p.created_at}));
+  const predictions = read('Predictions', SCHEMAS.Predictions).map(p=>({player_id:String(p.player_id), match_id:String(p.match_id), pred_outcome:p.pred_outcome||'', pred_home:p.pred_home, pred_away:p.pred_away, submitted_at:p.submitted_at}));
+  const bonus = read('Bonus', SCHEMAS.Bonus).map(b=>({player_id:String(b.player_id), semi1:b.semi1||'', semi2:b.semi2||'', semi3:b.semi3||'', semi4:b.semi4||'', firstPlace:b.firstPlace||'', secondPlace:b.secondPlace||'', thirdPlace:b.thirdPlace||'', firstYellowMinute:b.firstYellowMinute||b.finalGoalMinute||''}));
   const results = {};
-  read('Results').forEach(r=>{ results[String(r.match_id)] = {home:r.home||'', away:r.away||'', home_score:r.home_score, away_score:r.away_score, status:r.status, winner:r.winner||''}; });
-  const actual = read('ActualBonus')[0] || {};
+  read('Results', SCHEMAS.Results).forEach(r=>{ results[String(r.match_id)] = {home:r.home||'', away:r.away||'', home_score:r.home_score, away_score:r.away_score, status:r.status, winner:r.winner||''}; });
+  const actual = read('ActualBonus', SCHEMAS.ActualBonus)[0] || {};
   return {ok:true, players, predictions, bonus, results, actualBonus:{semi1:actual.semi1||'', semi2:actual.semi2||'', semi3:actual.semi3||'', semi4:actual.semi4||'', firstPlace:actual.firstPlace||'', secondPlace:actual.secondPlace||'', thirdPlace:actual.thirdPlace||'', firstYellowMinute:actual.firstYellowMinute||actual.finalGoalMinute||''}};
 }
 

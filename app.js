@@ -1,6 +1,6 @@
 // VM-tipset 2026 - v2
 // Hemsida: GitHub Pages. Data: Google Sheets via Apps Script.
-const API_URL = "https://script.google.com/macros/s/AKfycbw8hIRx5YANF3QzZBmwXbcmX_KyGI22y3LGJtPJ7CLCsQDVjBUtdddSA1Bratl6cPOg/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyG3FmNDSNo2osdEmmLgrcYR8rPqpd0xBi95x7HMCmpYkIbkG-Hl5RE1cN9maFzi1Ur/exec";
 
 // Valfri extern resultat-endpoint. Format:
 // [{id:"53452545", home:"South Africa", away:"Canada", home_score:2, away_score:0, status:"Complete"}, ...]
@@ -403,12 +403,53 @@ function renderAdminTips(){
   wrap.appendChild(div);
 }
 
+function setBonusForm(b={}){
+  ['semi1','semi2','semi3','semi4','firstPlace','secondPlace','thirdPlace','firstYellowMinute'].forEach(id=>{
+    const el=$('#'+id);
+    if(!el) return;
+    el.value = (id==='firstYellowMinute' ? (b.firstYellowMinute || b.finalGoalMinute || '') : (b[id] || ''));
+  });
+}
 function fillPlayerData(){
   const id=playerKey();
   if(!id) return;
   const b=state.bonus.find(x=>x.player_id===id);
-  if(b){ $('#semi1').value=b.semi1||''; $('#semi2').value=b.semi2||''; $('#semi3').value=b.semi3||''; $('#semi4').value=b.semi4||''; $('#firstPlace').value=b.firstPlace||''; $('#secondPlace').value=b.secondPlace||''; $('#thirdPlace').value=b.thirdPlace||''; $('#firstYellowMinute').value=b.firstYellowMinute||b.finalGoalMinute||''; }
-  renderMatches(); applyDraftToDom(); renderMyTips();
+  setBonusForm(b || {});
+  isUserEditing = false;
+  renderMatches();
+  applyDraftToDom();
+  renderMyTips();
+}
+function collectAndStoreCurrentPlayerTips({includeLocked=false}={}){
+  const pid=ensurePlayer();
+  const lockedPredictions = state.predictions.filter(p=>{
+    const m=TIP_MATCHES.find(x=>x.id===String(p.match_id));
+    return p.player_id===pid && m && isLocked(m);
+  });
+  state.predictions = state.predictions.filter(p=>p.player_id!==pid);
+  if(!includeLocked) state.predictions.push(...lockedPredictions);
+  TIP_MATCHES.forEach(m=>{
+    if(!includeLocked && isLocked(m)) return;
+    const ph=document.querySelector(`[data-ph="${m.id}"]`)?.value ?? '';
+    const pa=document.querySelector(`[data-pa="${m.id}"]`)?.value ?? '';
+    const po=document.querySelector(`[data-po="${m.id}"]`)?.value || outcome(ph,pa);
+    if(ph!=='' || pa!=='' || po!=='') state.predictions.push({player_id:pid,match_id:m.id,pred_outcome:po,pred_home:ph,pred_away:pa,submitted_at:new Date().toISOString()});
+  });
+  state.bonus=state.bonus.filter(b=>b.player_id!==pid);
+  state.bonus.push({
+    player_id:pid,
+    semi1:$('#semi1')?.value || '', semi2:$('#semi2')?.value || '', semi3:$('#semi3')?.value || '', semi4:$('#semi4')?.value || '',
+    firstPlace:$('#firstPlace')?.value || '', secondPlace:$('#secondPlace')?.value || '', thirdPlace:$('#thirdPlace')?.value || '', firstYellowMinute:$('#firstYellowMinute')?.value || ''
+  });
+  return pid;
+}
+async function saveCurrentPlayerAll(){
+  const pid=collectAndStoreCurrentPlayerTips();
+  saveLocal();
+  await saveCloud();
+  updateDraftAfterSave(pid, 'Allt sparat till Google Sheets');
+  renderAll();
+  toast('Allt sparat!');
 }
 function scorePlayer(player){
   let matchPts=0, exact=0, outcomeRight=0;
@@ -631,32 +672,19 @@ function bindEvents(){
     const isTipInput = t.matches('[data-ph],[data-pa],[data-po],#semi1,#semi2,#semi3,#semi4,#firstPlace,#secondPlace,#thirdPlace,#firstYellowMinute');
     if(isTipInput){ markEditing(); saveDraftFromDom(); clearEditingSoon(); }
   });
-  $('#playerName')?.addEventListener('input', ()=>{ updateDraftStatus(); });
-  $('#playerName')?.addEventListener('change', ()=>{ fillPlayerData(); applyDraftToDom(); });
+  let nameTimer=null;
+  $('#playerName')?.addEventListener('input', ()=>{
+    updateDraftStatus();
+    clearTimeout(nameTimer);
+    nameTimer=setTimeout(()=>fillPlayerData(), 350);
+  });
+  $('#playerName')?.addEventListener('change', ()=>fillPlayerData());
 
   $('#savePredictions').onclick=async()=>{
-    try{
-      const pid=ensurePlayer();
-      const lockedPredictions = state.predictions.filter(p=>{ const m=TIP_MATCHES.find(x=>x.id===p.match_id); return p.player_id===pid && m && isLocked(m); });
-      state.predictions = state.predictions.filter(p=>p.player_id!==pid);
-      state.predictions.push(...lockedPredictions);
-      TIP_MATCHES.forEach(m=>{
-        if(isLocked(m)) return;
-        const ph=document.querySelector(`[data-ph="${m.id}"]`).value;
-        const pa=document.querySelector(`[data-pa="${m.id}"]`).value;
-        const po=document.querySelector(`[data-po="${m.id}"]`)?.value || outcome(ph,pa);
-        if(ph!=='' || pa!=='' || po!=='') state.predictions.push({player_id:pid,match_id:m.id,pred_outcome:po,pred_home:ph,pred_away:pa,submitted_at:new Date().toISOString()});
-      });
-      saveLocal(); await saveCloud(); updateDraftAfterSave(pid); renderAll(); toast('Tips sparade! Låsta matcher ändrades inte.');
-    }catch(e){ toast(e.message); }
+    try{ await saveCurrentPlayerAll(); }catch(e){ toast(e.message); }
   };
   $('#saveBonus').onclick=async()=>{
-    try{
-      const pid=ensurePlayer();
-      state.bonus=state.bonus.filter(b=>b.player_id!==pid);
-      state.bonus.push({player_id:pid,semi1:$('#semi1').value,semi2:$('#semi2').value,semi3:$('#semi3').value,semi4:$('#semi4').value,firstPlace:$('#firstPlace').value,secondPlace:$('#secondPlace').value,thirdPlace:$('#thirdPlace').value,firstYellowMinute:$('#firstYellowMinute').value});
-      saveLocal(); await saveCloud(); updateDraftAfterSave(pid, 'Bonus sparad till Google Sheets'); renderAll(); toast('Bonus sparad!');
-    }catch(e){toast(e.message)}
+    try{ await saveCurrentPlayerAll(); }catch(e){ toast(e.message); }
   };
   $('#saveResults').onclick=async()=>{
     MATCHES.forEach(m=>{
