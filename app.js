@@ -126,6 +126,21 @@ function normalizeResultsByInternalId(results){
   return normalized;
 }
 
+function normalizePredictionsByInternalId(predictions){
+  return (predictions || []).map(p => {
+    const internalId = internalMatchIdForIncoming({ id: p.match_id });
+    return { ...p, match_id: internalId || String(p.match_id) };
+  });
+}
+
+function normalizedStateForCloud(){
+  return {
+    ...state,
+    predictions: normalizePredictionsByInternalId(state.predictions),
+    results: normalizeResultsByInternalId(state.results)
+  };
+}
+
 const BRACKET_SLOTS = {
   '53452511': {home:{from:'53452545', type:'winner'}, away:{from:'53452547', type:'winner'}},
   '53452509': {home:{from:'53452541', type:'winner'}, away:{from:'53452543', type:'winner'}},
@@ -337,7 +352,8 @@ async function api(action,payload={}){
 }
 function mergeCloud(data){
   if(!data) return;
-  ['players','predictions','bonus','actualBonus'].forEach(k=>{ if(data[k] !== undefined) state[k]=data[k]; });
+  ['players','bonus','actualBonus'].forEach(k=>{ if(data[k] !== undefined) state[k]=data[k]; });
+  if(data.predictions !== undefined) state.predictions = normalizePredictionsByInternalId(data.predictions);
   if(data.results !== undefined) state.results = normalizeResultsByInternalId(data.results);
   saveLocal(); if(canReplaceForms()) renderAll(); else { renderDashboard(); renderScoreboard(); renderBracket(); renderAllTips(); renderStats(); renderDataPreview(); }
 }
@@ -345,7 +361,7 @@ async function loadCloud(silent=false){
   if(!apiEnabled()){ if(!silent) toast('Ingen Google Sheets-URL är inlagd i app.js'); return; }
   const data=await api('getAll'); mergeCloud(data); if(!silent) toast('Hämtade sparad data');
 }
-async function saveCloud(){ if(apiEnabled()) await api('saveAll',state); }
+async function saveCloud(){ if(apiEnabled()) await api('saveAll', normalizedStateForCloud()); }
 
 function predictionInputs(prefix,m,vals={},locked=false){
   const resultInputs = `<div class="prediction-box">
@@ -367,7 +383,7 @@ function predictionInputs(prefix,m,vals={},locked=false){
     ${resultInputs}
   </div>`;
 }
-function getPrediction(playerId, matchId){ return state.predictions.find(p=>p.player_id===playerId && p.match_id===matchId); }
+function getPrediction(playerId, matchId){ return state.predictions.find(p=>String(p.player_id)===String(playerId) && String(p.match_id)===String(matchId)); }
 function pointsForPrediction(p,r){
   if(!p || !r || r.status!=='Complete') return 0;
   const exact = Number(p.pred_home)===Number(r.home_score) && Number(p.pred_away)===Number(r.away_score);
@@ -525,7 +541,7 @@ async function saveCurrentPlayerAll(){
 function scorePlayer(player){
   let matchPts=0, exact=0, outcomeRight=0;
   state.predictions.filter(p=>p.player_id===player.id && isTipMatchId(p.match_id)).forEach(p=>{
-    const r=state.results[p.match_id];
+    const r=state.results[String(p.match_id)];
     if(!r || r.status!=='Complete') return;
     const pts = pointsForPrediction(p,r);
     matchPts += pts;
