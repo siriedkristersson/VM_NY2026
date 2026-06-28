@@ -1,29 +1,75 @@
-# VM-tipset – Familjen Måsabacka
+# VM-tipset 2026
 
-## Vad som är nytt i denna version
+Uppdaterad version med:
 
-- Google Sheet-ID är redan inlagt i `apps-script.gs`.
-- Resultat hämtas automatiskt från ESPN via Apps Script när hemsidan öppnas och därefter ungefär var 5:e minut.
-- När en match är färdig uppdateras nästa runda automatiskt på hemsidan, t.ex. ändras `Vinnare: South Africa/Canada` till det lag som faktiskt gått vidare.
-- Scoreboard räknas om automatiskt och skrivs även till fliken `Scoreboard` i Google Sheet.
-- Bonusfrågor: VM-finalist 1, VM-finalist 2 och minuten för första målet i finalen.
+- 1X2 + exakt resultat på alla matcher.
+- Poängräkning:
+  - 2 poäng för exakt rätt resultat.
+  - 1 poäng för rätt 1X2 om exakta resultatet inte är rätt.
+  - 2 poäng per rätt lag som når semifinal.
+  - 3 poäng för rätt bronslag.
+  - 4 poäng för rätt silverlag.
+  - 5 poäng för rätt guldlag.
+- Bonusfrågor: 4 semifinallag, guld, silver, brons och minut för första gula kortet i finalen.
+- Admin kan fylla i faktiska resultat och faktiska bonusutfall.
+- Stöd för automatisk resultatuppdatering via Apps Script/resultat-API.
 
-## Viktigt vid uppladdning
+## Filer
 
-1. Lägg `index.html`, `style.css` och `app.js` där hemsidan ligger.
-2. Öppna Google Apps Script.
-3. Ersätt hela koden med innehållet i `apps-script.gs`.
-4. Klicka spara.
-5. Gå till `Implementera` → `Hantera implementeringar` → pennan → välj `Ny version` → `Implementera`.
+- `index.html` – själva sidan
+- `style.css` – utseende
+- `app.js` – logik på hemsidan
+- `apps-script.gs` – Google Apps Script-backend för Google Sheets och automatisk resultathämtning
 
-Du behöver inte ändra något manuellt i Google Sheet. Scriptet skapar/uppdaterar flikarna själv.
+## Viktigt om automatisk källa
 
-## Google Sheet
+Google-sökresultat är inte en stabil datakälla att skrapa direkt. Säkrare är att låta Google Apps Script hämta från en strukturerad resultatkälla/API och sedan spara data i Google Sheet.
 
-Filen använder detta Sheet-ID:
+I `apps-script.gs` kan du lägga en egen endpoint i Script Properties:
 
-`1QowhUBvg0LvMw9Yvr9qqYgZrgDyZTLfTlH-VvIP1Yrk`
+```text
+RESULT_API_URL = https://din-endpoint.se/results
+```
 
-## Om lag inte syns direkt i nästa runda
+Den ska returnera data i formatet:
 
-Det krävs att matchen har status `Complete` och att resultatet är hämtat/sparat. När det finns ett färdigt resultat uppdateras lagnamnet automatiskt på sidan.
+```json
+[
+  {
+    "id": "53452545",
+    "home": "South Africa",
+    "away": "Canada",
+    "home_score": 2,
+    "away_score": 1,
+    "status": "Complete",
+    "winner": "South Africa"
+  }
+]
+```
+
+Om ingen egen endpoint anges försöker Apps Script använda ESPNs publika scoreboard-endpoint.
+
+
+## Nytt i spelträds-versionen
+- Ny flik: Spelträd.
+- Spelträdet visar 16-delsfinal till final och fyller vidare lag automatiskt när resultat sparas eller hämtas.
+- Spelare identifieras bara med namn på hemsidan, inget email/frivilligt ID-fält visas.
+
+## Ny designversion
+Denna version innehåller:
+- Dashboard på startsidan med deltagare, spelade matcher, progress och topp 5.
+- Snyggare och mer app-liknande spelträd med flaggor, vinnare och förlorare.
+- Live-ställning/topplista med rörelser.
+- Sida för att se allas tips.
+- Förbättrad Mina tips-sida med personlig poängruta.
+- Flaggor vid lagnamn.
+- Mobilanpassad navigation och kortdesign.
+- Ljust/mörkt läge.
+- Modernare kort, färger, spacing och responsiv design.
+
+## Senaste ändring
+
+- Navigationen är städad och utan emojis.
+- Matchraderna har fått bättre layout så 1X2, resultat och status inte ligger ovanpå varandra.
+- Admin kan lägga in eller ändra deltagarnas tips även efter att matchen har börjat via adminpanelen.
+- Spelträdet har fått renare kortdesign och tydligare vinnare/förlorare.

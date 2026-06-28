@@ -15,8 +15,10 @@
  * - Manuell resultatadmin fungerar direkt.
  * - För automatisk hämtning: lägg en endpoint i Script Properties:
  *   RESULT_API_URL = https://din-endpoint.se/results
- *   Den ska returnera JSON: [{id, home_score, away_score, status}]
- * - Om RESULT_API_URL lämnas tom hämtar scriptet själv från ESPNs publika scoreboard-API.
+ *   Den ska returnera JSON: [{id, home, away, home_score, away_score, status, winner}]
+ * - Google-sökresultat är inte en stabil källa att skrapa.
+ * - Om RESULT_API_URL lämnas tom hämtar scriptet från ESPNs publika scoreboard-API.
+ * - Vill ni använda FIFA som säker källa: lägg en egen FIFA/API-endpoint i RESULT_API_URL som returnerar formatet ovan.
  */
 const SPREADSHEET_ID = '1QowhUBvg0LvMw9Yvr9qqYgZrgDyZTLfTlH-VvIP1Yrk';
 
@@ -36,24 +38,24 @@ function read(name){ const s=ss().getSheetByName(name); if(!s || s.getLastRow()<
 
 function saveAll(data){
   write('Players',['player_id','name','email','created_at'], (data.players||[]).map(p=>[p.id,p.name,p.email,p.created_at]));
-  write('Predictions',['player_id','match_id','tip_1x2','pred_home','pred_away','submitted_at'], (data.predictions||[]).map(p=>[p.player_id,p.match_id,p.tip_1x2,p.pred_home,p.pred_away,p.submitted_at]));
-  write('Bonus',['player_id','finalist1','finalist2','finalGoalMinute'], (data.bonus||[]).map(b=>[b.player_id,b.finalist1,b.finalist2,b.finalGoalMinute]));
+  write('Predictions',['player_id','match_id','pred_outcome','pred_home','pred_away','submitted_at'], (data.predictions||[]).map(p=>[p.player_id,p.match_id,p.pred_outcome||'',p.pred_home,p.pred_away,p.submitted_at]));
+  write('Bonus',['player_id','semi1','semi2','semi3','semi4','firstPlace','secondPlace','thirdPlace','firstYellowMinute'], (data.bonus||[]).map(b=>[b.player_id,b.semi1||'',b.semi2||'',b.semi3||'',b.semi4||'',b.firstPlace||'',b.secondPlace||'',b.thirdPlace||'',b.firstYellowMinute||b.finalGoalMinute||'']));
   const results = data.results || {};
-  write('Results',['match_id','home_score','away_score','status','winner'], Object.keys(results).map(id=>[id,results[id].home_score,results[id].away_score,results[id].status,results[id].winner||'']));
+  write('Results',['match_id','home','away','home_score','away_score','status','winner'], Object.keys(results).map(id=>[id,results[id].home||'',results[id].away||'',results[id].home_score,results[id].away_score,results[id].status,results[id].winner||'']));
   const a=data.actualBonus||{};
-  write('ActualBonus',['finalist1','finalist2','finalGoalMinute'], [[a.finalist1||'',a.finalist2||'',a.finalGoalMinute||'']]);
+  write('ActualBonus',['semi1','semi2','semi3','semi4','firstPlace','secondPlace','thirdPlace','firstYellowMinute'], [[a.semi1||'',a.semi2||'',a.semi3||'',a.semi4||'',a.firstPlace||'',a.secondPlace||'',a.thirdPlace||'',a.firstYellowMinute||a.finalGoalMinute||'']]);
   writeScoreboard_(data);
   return {ok:true};
 }
 
 function getAll(){
   const players = read('Players').map(p=>({id:String(p.player_id), name:p.name, email:p.email, created_at:p.created_at}));
-  const predictions = read('Predictions').map(p=>({player_id:String(p.player_id), match_id:String(p.match_id), tip_1x2:p.tip_1x2, pred_home:p.pred_home, pred_away:p.pred_away, submitted_at:p.submitted_at}));
-  const bonus = read('Bonus').map(b=>({player_id:String(b.player_id), finalist1:b.finalist1, finalist2:b.finalist2, finalGoalMinute:b.finalGoalMinute}));
+  const predictions = read('Predictions').map(p=>({player_id:String(p.player_id), match_id:String(p.match_id), pred_outcome:p.pred_outcome||'', pred_home:p.pred_home, pred_away:p.pred_away, submitted_at:p.submitted_at}));
+  const bonus = read('Bonus').map(b=>({player_id:String(b.player_id), semi1:b.semi1||'', semi2:b.semi2||'', semi3:b.semi3||'', semi4:b.semi4||'', firstPlace:b.firstPlace||'', secondPlace:b.secondPlace||'', thirdPlace:b.thirdPlace||'', firstYellowMinute:b.firstYellowMinute||b.finalGoalMinute||''}));
   const results = {};
-  read('Results').forEach(r=>{ results[String(r.match_id)] = {home_score:r.home_score, away_score:r.away_score, status:r.status, winner:r.winner||''}; });
+  read('Results').forEach(r=>{ results[String(r.match_id)] = {home:r.home||'', away:r.away||'', home_score:r.home_score, away_score:r.away_score, status:r.status, winner:r.winner||''}; });
   const actual = read('ActualBonus')[0] || {};
-  return {ok:true, players, predictions, bonus, results, actualBonus:{finalist1:actual.finalist1||'', finalist2:actual.finalist2||'', finalGoalMinute:actual.finalGoalMinute||''}};
+  return {ok:true, players, predictions, bonus, results, actualBonus:{semi1:actual.semi1||'', semi2:actual.semi2||'', semi3:actual.semi3||'', semi4:actual.semi4||'', firstPlace:actual.firstPlace||'', secondPlace:actual.secondPlace||'', thirdPlace:actual.thirdPlace||'', firstYellowMinute:actual.firstYellowMinute||actual.finalGoalMinute||''}};
 }
 
 function fetchResultsFromProvider(){
@@ -75,9 +77,15 @@ function fetchResultsFromProvider(){
     const as = x.away_score ?? x.awayScore ?? x.score_away;
     const rawStatus = String(x.status || x.state || '').toLowerCase();
     const isComplete = rawStatus.includes('complete') || rawStatus.includes('final') || rawStatus.includes('finished') || x.completed === true;
-    if(hs !== null && hs !== undefined && as !== null && as !== undefined){
-      current.results[id] = {home_score:hs, away_score:as, status:isComplete ? 'Complete' : (x.status || 'Scheduled'), winner:x.winner || x.winner_name || x.winnerName || ''};
-    }
+    const prev = current.results[id] || {};
+    current.results[id] = {
+      home: x.home || x.homeTeam || x.home_name || prev.home || '',
+      away: x.away || x.awayTeam || x.away_name || prev.away || '',
+      home_score: hs !== null && hs !== undefined ? hs : (prev.home_score || ''),
+      away_score: as !== null && as !== undefined ? as : (prev.away_score || ''),
+      status: isComplete ? 'Complete' : (x.status || prev.status || 'Scheduled'),
+      winner: x.winner || x.winner_name || x.winnerName || prev.winner || ''
+    };
   });
   saveAll(current);
   return {ok:true, results: rows};
@@ -102,6 +110,8 @@ function fetchEspnWorldCupResults_(){
         const winnerComp = competitors.find(c => c.winner === true);
         out.push({
           id: String(ev.id),
+          home: home.team ? (home.team.displayName || home.team.shortDisplayName || '') : '',
+          away: away.team ? (away.team.displayName || away.team.shortDisplayName || '') : '',
           home_score: home.score,
           away_score: away.score,
           status: ev.status && ev.status.type && ev.status.type.completed ? 'Complete' : (ev.status?.type?.name || 'Scheduled'),
@@ -126,11 +136,18 @@ function norm_(value){
   return String(value || '').trim().toLowerCase();
 }
 
+function pointsForPrediction_(p,r){
+  if(!p || !r || r.status !== 'Complete') return 0;
+  const exact = Number(p.pred_home) === Number(r.home_score) && Number(p.pred_away) === Number(r.away_score);
+  if(exact) return 2;
+  const predOutcome = p.pred_outcome || calcOutcome_(p.pred_home, p.pred_away);
+  return predOutcome && predOutcome === calcOutcome_(r.home_score, r.away_score) ? 1 : 0;
+}
+
 function scorePlayer_(player, data){
   let matchPts = 0;
   let bonusPts = 0;
   let exact = 0;
-  let correctOutcome = 0;
 
   const results = data.results || {};
   (data.predictions || [])
@@ -138,28 +155,23 @@ function scorePlayer_(player, data){
     .forEach(p => {
       const r = results[String(p.match_id)];
       if (!r || r.status !== 'Complete') return;
-
-      if (String(p.tip_1x2) === calcOutcome_(r.home_score, r.away_score)) {
-        matchPts += 2;
-        correctOutcome++;
-      }
-
-      if (Number(p.pred_home) === Number(r.home_score) && Number(p.pred_away) === Number(r.away_score)) {
-        matchPts += 5;
-        exact++;
-      }
+      const pts = pointsForPrediction_(p,r);
+      matchPts += pts;
+      if (pts === 2) exact++;
     });
 
   const b = (data.bonus || []).find(x => String(x.player_id) === String(player.id));
   const actualBonus = data.actualBonus || {};
   if (b) {
-    const finalists = [norm_(actualBonus.finalist1), norm_(actualBonus.finalist2)].filter(Boolean);
-    if (finalists.includes(norm_(b.finalist1))) bonusPts += 7;
-    if (norm_(b.finalist2) !== norm_(b.finalist1) && finalists.includes(norm_(b.finalist2))) bonusPts += 7;
-    if (b.finalGoalMinute !== '' && b.finalGoalMinute != null && actualBonus.finalGoalMinute !== '' && actualBonus.finalGoalMinute != null && Number(b.finalGoalMinute) === Number(actualBonus.finalGoalMinute)) bonusPts += 7;
+    const actualSemis = [actualBonus.semi1, actualBonus.semi2, actualBonus.semi3, actualBonus.semi4].map(norm_).filter(Boolean);
+    const tipSemis = [...new Set([b.semi1, b.semi2, b.semi3, b.semi4].map(norm_).filter(Boolean))];
+    bonusPts += tipSemis.filter(team => actualSemis.includes(team)).length * 2;
+    if (norm_(b.thirdPlace) && norm_(b.thirdPlace) === norm_(actualBonus.thirdPlace)) bonusPts += 3;
+    if (norm_(b.secondPlace) && norm_(b.secondPlace) === norm_(actualBonus.secondPlace)) bonusPts += 4;
+    if (norm_(b.firstPlace) && norm_(b.firstPlace) === norm_(actualBonus.firstPlace)) bonusPts += 5;
   }
 
-  return { matchPts, bonusPts, total: matchPts + bonusPts, exact, correctOutcome };
+  return { matchPts, bonusPts, total: matchPts + bonusPts, exact };
 }
 
 function writeScoreboard_(data){
@@ -177,10 +189,9 @@ function writeScoreboard_(data){
       row.score.matchPts,
       row.score.bonusPts,
       row.score.exact,
-      row.score.correctOutcome,
       row.score.total,
       new Date()
     ]);
 
-  write('Scoreboard',['rank','player_id','name','match_points','bonus_points','exact_results','correct_1x2','total_points','updated_at'], rows);
+  write('Scoreboard',['rank','player_id','name','match_points','bonus_points','exact_results','total_points','updated_at'], rows);
 }

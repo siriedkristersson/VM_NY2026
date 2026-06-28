@@ -3,9 +3,9 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbw8hIRx5YANF3QzZBmwXbcmX_KyGI22y3LGJtPJ7CLCsQDVjBUtdddSA1Bratl6cPOg/exec";
 
 // Valfri extern resultat-endpoint. Format:
-// [{id:"66456904", home_score:2, away_score:0, status:"Complete"}, ...]
-// Lämna tom om du använder Apps Script/Manuell admin.
-const RESULT_API_URL = ""; // tom = Apps Script hämtar automatiskt från ESPN om backend är uppdaterad
+// [{id:"53452545", home:"South Africa", away:"Canada", home_score:2, away_score:0, status:"Complete"}, ...]
+// Lämna tom om du använder Apps Script. Apps Script kan då hämta från den källa du valt i backend.
+const RESULT_API_URL = "";
 
 // Automatisk hämtning när sidan är öppen.
 const AUTO_FETCH_RESULTS = true;
@@ -85,27 +85,49 @@ let previousRanks = store.get('previousRanks') || {};
 
 function saveLocal(){ Object.entries(state).forEach(([k,v])=>store.set(k,v)); }
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
-function playerKey(){ const email=$('#playerEmail')?.value.trim().toLowerCase() || ''; const name=$('#playerName')?.value.trim() || ''; return email || name.toLowerCase(); }
+function playerKey(){ const name=$('#playerName')?.value.trim() || ''; return name.toLowerCase(); }
 function ensurePlayer(){
   const name=$('#playerName').value.trim();
   if(!name) throw new Error('Skriv ditt namn först.');
   const id=playerKey();
   const existing=state.players.find(p=>p.id===id);
-  if(existing){ existing.name=name; existing.email=$('#playerEmail').value.trim(); }
-  else state.players.push({id,name,email:$('#playerEmail').value.trim(),created_at:new Date().toISOString()});
+  if(existing){ existing.name=name; }
+  else state.players.push({id,name,created_at:new Date().toISOString()});
   return id;
 }
 function norm(s){ return (s||'').trim().toLowerCase(); }
+
+const FLAG_MAP = {
+  'south africa':'🇿🇦','canada':'🇨🇦','brazil':'🇧🇷','japan':'🇯🇵','germany':'🇩🇪','paraguay':'🇵🇾',
+  'netherlands':'🇳🇱','morocco':'🇲🇦','ivory coast':'🇨🇮','norway':'🇳🇴','france':'🇫🇷','sweden':'🇸🇪',
+  'mexico':'🇲🇽','ecuador':'🇪🇨','england':'🏴','dr congo':'🇨🇩','belgium':'🇧🇪','senegal':'🇸🇳',
+  'united states':'🇺🇸','bosnia and herzegovina':'🇧🇦','spain':'🇪🇸','austria':'🇦🇹','portugal':'🇵🇹','croatia':'🇭🇷',
+  'switzerland':'🇨🇭','algeria':'🇩🇿','australia':'🇦🇺','egypt':'🇪🇬','argentina':'🇦🇷','cape verde':'🇨🇻',
+  'colombia':'🇨🇴','ghana':'🇬🇭'
+};
+function flagFor(name){ return FLAG_MAP[norm(cleanWinnerName(name))] || '⚽'; }
+function teamLabel(name){ const n=displayTeamName ? displayTeamName(name) : cleanWinnerName(name); return `<span class="flag">${flagFor(n)}</span><span>${n}</span>`; }
+function formatDateShort(m){
+  const d=kickoffDate(m);
+  return d.toLocaleString('sv-SE',{weekday:'short', day:'numeric', month:'numeric', hour:'2-digit', minute:'2-digit'}).replace(',', '');
+}
+function nextMatch(){ return MATCHES.filter(m=>!resultComplete(m)).sort((a,b)=>kickoffDate(a)-kickoffDate(b))[0]; }
+function playedCount(){ return MATCHES.filter(m=>resultComplete(m)).length; }
+
 function outcome(h,a){ if(h===''||a===''||h==null||a==null) return ''; h=Number(h); a=Number(a); return h>a?'1':h<a?'2':'X'; }
 function kickoffDate(m){ return new Date(m.date.replace(' ', 'T') + ':00'); }
 function lockDate(m){ return new Date(kickoffDate(m).getTime() - LOCK_MINUTES_BEFORE_KICKOFF*60000); }
 function resultComplete(m){ const r=state.results[m.id]; return r && r.status==='Complete' && r.home_score!=='' && r.away_score!=='' && r.home_score!=null && r.away_score!=null; }
 function matchById(id){ return MATCHES.find(m=>m.id===String(id)); }
 function cleanWinnerName(value){ return (value || '').replace(/^Vinnare:\s*/i,'').replace(/^Förlorare:\s*/i,'').trim(); }
+function sourceMatch(m){
+  const r = state.results[String(m.id)] || {};
+  return {...m, home: r.home || r.homeTeam || r.home_name || m.home, away: r.away || r.awayTeam || r.away_name || m.away};
+}
 function winnerSide(matchId){
   const m=matchById(matchId), r=state.results[String(matchId)];
   if(!m || !r || r.status!=='Complete') return null;
-  const visible = BRACKET_SLOTS[String(matchId)] ? resolvedMatch(m) : m;
+  const visible = BRACKET_SLOTS[String(matchId)] ? resolvedMatch(m) : sourceMatch(m);
   const winner = cleanWinnerName(r.winner || r.winner_name || r.winnerName || '');
   if(winner){
     if(norm(winner)===norm(visible.home) || norm(winner)===norm(m.home)) return 'home';
@@ -118,7 +140,7 @@ function winnerSide(matchId){
 }
 function participantFromSlot(slot){
   if(!slot) return '';
-  const source=matchById(slot.from);
+  const source=resolvedMatch(matchById(slot.from));
   if(!source) return '';
   const side=winnerSide(slot.from);
   if(!side) return `${slot.type==='loser'?'Förlorare':'Vinnare'}: ${source.home}/${source.away}`;
@@ -132,15 +154,18 @@ function participantFromSlot(slot){
   return `${slot.type==='loser'?'Förlorare':'Vinnare'}: ${source.home}/${source.away}`;
 }
 function resolvedMatch(m){
+  if(!m) return null;
+  const base = sourceMatch(m);
   const slots=BRACKET_SLOTS[m.id];
-  if(!slots) return {...m};
-  return {...m, home: participantFromSlot(slots.home) || m.home, away: participantFromSlot(slots.away) || m.away};
+  if(!slots) return base;
+  const r = state.results[String(m.id)] || {};
+  return {...base, home: r.home || r.homeTeam || participantFromSlot(slots.home) || base.home, away: r.away || r.awayTeam || participantFromSlot(slots.away) || base.away};
 }
 function isLocked(m){ return new Date() >= lockDate(m) || resultComplete(m); }
 function countdownText(m){
   if(resultComplete(m)) return 'Spelad';
   const diff = lockDate(m).getTime() - Date.now();
-  if(diff <= 0) return '🔒 Låst';
+  if(diff <= 0) return 'Låst';
   const d=Math.floor(diff/86400000), h=Math.floor((diff%86400000)/3600000), min=Math.floor((diff%3600000)/60000);
   if(d>0) return `Låser om ${d}d ${h}h`;
   if(h>0) return `Låser om ${h}h ${min}m`;
@@ -166,19 +191,32 @@ async function loadCloud(silent=false){
 async function saveCloud(){ if(apiEnabled()) await api('saveAll',state); }
 
 function predictionInputs(prefix,m,vals={},locked=false){
-  return `<div class="prediction-box">
+  const resultInputs = `<div class="prediction-box">
     <label>Hemma<input data-${prefix}h="${m.id}" type="number" min="0" inputmode="numeric" placeholder="0" value="${vals.home ?? ''}" ${locked?'disabled':''}></label>
     <span class="dash">–</span>
     <label>Borta<input data-${prefix}a="${m.id}" type="number" min="0" inputmode="numeric" placeholder="0" value="${vals.away ?? ''}" ${locked?'disabled':''}></label>
+  </div>`;
+  if(prefix !== 'p' && prefix !== 'ap') return resultInputs;
+  const selected = vals.outcome || '';
+  return `<div class="tip-box">
+    <label>1X2
+      <select data-${prefix}o="${m.id}" class="tip-select" ${locked?'disabled':''}>
+        <option value="" ${selected===''?'selected':''}>Välj</option>
+        <option value="1" ${selected==='1'?'selected':''}>1</option>
+        <option value="X" ${selected==='X'?'selected':''}>X</option>
+        <option value="2" ${selected==='2'?'selected':''}>2</option>
+      </select>
+    </label>
+    ${resultInputs}
   </div>`;
 }
 function getPrediction(playerId, matchId){ return state.predictions.find(p=>p.player_id===playerId && p.match_id===matchId); }
 function pointsForPrediction(p,r){
   if(!p || !r || r.status!=='Complete') return 0;
-  let pts=0;
-  if(p.tip_1x2===outcome(r.home_score,r.away_score)) pts += 2;
-  if(Number(p.pred_home)===Number(r.home_score) && Number(p.pred_away)===Number(r.away_score)) pts += 5;
-  return pts;
+  const exact = Number(p.pred_home)===Number(r.home_score) && Number(p.pred_away)===Number(r.away_score);
+  if(exact) return 2;
+  const predOutcome = p.pred_outcome || outcome(p.pred_home, p.pred_away);
+  return predOutcome && predOutcome === outcome(r.home_score, r.away_score) ? 1 : 0;
 }
 function matchRow(m,admin){
   const rm=resolvedMatch(m);
@@ -193,7 +231,7 @@ function matchRow(m,admin){
     <div class="date">${m.date}</div>
     <div class="result-pill">${m.group}</div>
   </div>
-  <div class="teams">${rm.home} – ${rm.away}</div>`;
+  <div class="teams">${teamLabel(rm.home)} <span class="versus">–</span> ${teamLabel(rm.away)}</div>`;
 
   if(admin){
     div.innerHTML += `${predictionInputs('r',m,{home:r.home_score,away:r.away_score})}
@@ -203,22 +241,14 @@ function matchRow(m,admin){
     </select>
     <span class="result-pill ${r.status==='Complete'?'played':''}">${r.status==='Complete'?'Poäng räknas':'Poäng räknas ej'}</span>`;
   } else {
-    const tipValue=p?.tip_1x2||'';
     const ph=p?.pred_home??'';
     const pa=p?.pred_away??'';
+    const po=p?.pred_outcome || outcome(ph,pa) || '';
     const resultText = resultComplete(m) ? `Resultat: ${r.home_score}–${r.away_score}` : countdownText(m);
-    const tipText = p ? `<div class="my-tip">Ditt tips: <strong>${p.pred_home||'?'}–${p.pred_away||'?'}</strong> (${p.tip_1x2||'ingen 1/X/2'})</div>` : '<div class="my-tip muted">Inget tips sparat ännu</div>';
+    const tipText = p ? `<div class="my-tip">Ditt tips: <strong>${p.pred_outcome || outcome(p.pred_home,p.pred_away) || '?'} · ${p.pred_home||'?'}–${p.pred_away||'?'}</strong></div>` : '<div class="my-tip muted">Inget tips sparat ännu</div>';
     const pointText = resultComplete(m) ? `<div class="point-badge ${pts>0?'plus':'zero'}">+${pts} poäng</div>` : '';
     div.innerHTML += `
-    <label>1/X/2
-      <select class="tip-select" data-tip="${m.id}" ${locked?'disabled':''}>
-        <option value="" ${tipValue===''?'selected':''}>Välj</option>
-        <option value="1" ${tipValue==='1'?'selected':''}>1 - ${rm.home}</option>
-        <option value="X" ${tipValue==='X'?'selected':''}>X - oavgjort</option>
-        <option value="2" ${tipValue==='2'?'selected':''}>2 - ${rm.away}</option>
-      </select>
-    </label>
-    ${predictionInputs('p',m,{home:ph,away:pa},locked)}
+    ${predictionInputs('p',m,{home:ph,away:pa,outcome:po},locked)}
     <div class="match-status">
       <span class="result-pill ${locked?'locked':''} ${resultComplete(m)?'played':''}">${resultText}</span>
       ${tipText}
@@ -239,34 +269,85 @@ function renderMatches(){
 function renderAdmin(){
   const wrap=$('#resultsAdmin'); if(!wrap) return; wrap.innerHTML='';
   MATCHES.forEach(m=>wrap.appendChild(matchRow(m,true)));
-  $('#actualFinalist1').value=state.actualBonus.finalist1||'';
-  $('#actualFinalist2').value=state.actualBonus.finalist2||'';
-  $('#actualFinalGoalMinute').value=state.actualBonus.finalGoalMinute||'';
+  $('#actualSemi1').value=state.actualBonus.semi1||'';
+  $('#actualSemi2').value=state.actualBonus.semi2||'';
+  $('#actualSemi3').value=state.actualBonus.semi3||'';
+  $('#actualSemi4').value=state.actualBonus.semi4||'';
+  $('#actualFirstPlace').value=state.actualBonus.firstPlace||'';
+  $('#actualSecondPlace').value=state.actualBonus.secondPlace||'';
+  $('#actualThirdPlace').value=state.actualBonus.thirdPlace||'';
+  $('#actualFirstYellowMinute').value=state.actualBonus.firstYellowMinute||state.actualBonus.finalGoalMinute||'';
+  renderAdminTips();
 }
+function adminPlayerKey(){ return ($('#adminPlayerName')?.value || '').trim().toLowerCase(); }
+function getOrCreateNamedPlayer(rawName){
+  const name=(rawName||'').trim();
+  if(!name) throw new Error('Skriv deltagarens namn först.');
+  const id=name.toLowerCase();
+  const existing=state.players.find(p=>p.id===id);
+  if(existing) existing.name=name;
+  else state.players.push({id,name,created_at:new Date().toISOString(), added_by_admin:true});
+  return id;
+}
+function adminTipRow(m, p){
+  const rm=resolvedMatch(m);
+  const ph=p?.pred_home??'';
+  const pa=p?.pred_away??'';
+  const po=p?.pred_outcome || outcome(ph,pa) || '';
+  const div=document.createElement('div');
+  div.className='match-row admin-tip-row';
+  div.innerHTML=`<div>
+    <div class="date">${m.date}</div>
+    <div class="result-pill">${m.group}</div>
+  </div>
+  <div class="teams">${teamLabel(rm.home)} <span class="versus">–</span> ${teamLabel(rm.away)}</div>
+  ${predictionInputs('ap',m,{home:ph,away:pa,outcome:po},false)}
+  <div class="result-pill">Admin kan ändra även låst</div>`;
+  return div;
+}
+function renderAdminTips(){
+  const wrap=$('#adminTipsMatches'); if(!wrap) return;
+  const pid=adminPlayerKey();
+  wrap.innerHTML='';
+  if(!pid){ wrap.innerHTML='<p class="muted">Skriv ett namn för att visa matcherna.</p>'; return; }
+  const byGroup = MATCHES.reduce((a,m)=>((a[m.group]??=[]).push(m),a),{});
+  ['16-delsfinal','Åttondelsfinal','Kvartsfinal','Semifinal','Bronsmatch','Final'].filter(g=>byGroup[g]).forEach(g=>{
+    const div=document.createElement('div'); div.className='match-group admin-tip-group'; div.innerHTML=`<h4 class="group-heading">${g}</h4>`;
+    byGroup[g].forEach(m=> div.appendChild(adminTipRow(m, getPrediction(pid,m.id))) );
+    wrap.appendChild(div);
+  });
+}
+
 function fillPlayerData(){
   const id=playerKey();
   if(!id) return;
   const b=state.bonus.find(x=>x.player_id===id);
-  if(b){ $('#finalist1').value=b.finalist1||''; $('#finalist2').value=b.finalist2||''; $('#finalGoalMinute').value=b.finalGoalMinute||''; }
+  if(b){ $('#semi1').value=b.semi1||''; $('#semi2').value=b.semi2||''; $('#semi3').value=b.semi3||''; $('#semi4').value=b.semi4||''; $('#firstPlace').value=b.firstPlace||''; $('#secondPlace').value=b.secondPlace||''; $('#thirdPlace').value=b.thirdPlace||''; $('#firstYellowMinute').value=b.firstYellowMinute||b.finalGoalMinute||''; }
   renderMatches(); renderMyTips();
 }
 function scorePlayer(player){
-  let matchPts=0, exact=0, correctOutcome=0;
+  let matchPts=0, exact=0, outcomeRight=0;
   state.predictions.filter(p=>p.player_id===player.id).forEach(p=>{
     const r=state.results[p.match_id];
     if(!r || r.status!=='Complete') return;
-    if(p.tip_1x2===outcome(r.home_score,r.away_score)){ matchPts += 2; correctOutcome++; }
-    if(Number(p.pred_home)===Number(r.home_score) && Number(p.pred_away)===Number(r.away_score)){ matchPts += 5; exact++; }
+    const pts = pointsForPrediction(p,r);
+    matchPts += pts;
+    if(pts===2) exact++;
+    else if(pts===1) outcomeRight++;
   });
   let bonusPts=0; const b=state.bonus.find(x=>x.player_id===player.id);
   if(b){
-    const finals=[norm(state.actualBonus.finalist1),norm(state.actualBonus.finalist2)].filter(Boolean);
-    if(finals.includes(norm(b.finalist1))) bonusPts += 7;
-    if(norm(b.finalist2)!==norm(b.finalist1) && finals.includes(norm(b.finalist2))) bonusPts += 7;
-    if(b.finalGoalMinute !== '' && b.finalGoalMinute != null && state.actualBonus.finalGoalMinute !== '' && state.actualBonus.finalGoalMinute != null && Number(b.finalGoalMinute)===Number(state.actualBonus.finalGoalMinute)) bonusPts += 7;
+    const actualSemis = [state.actualBonus.semi1,state.actualBonus.semi2,state.actualBonus.semi3,state.actualBonus.semi4].map(norm).filter(Boolean);
+    const tipSemis = [b.semi1,b.semi2,b.semi3,b.semi4].map(norm).filter(Boolean);
+    const uniqueTipSemis = [...new Set(tipSemis)];
+    bonusPts += uniqueTipSemis.filter(team=>actualSemis.includes(team)).length * 2;
+    if(norm(b.thirdPlace) && norm(b.thirdPlace)===norm(state.actualBonus.thirdPlace)) bonusPts += 3;
+    if(norm(b.secondPlace) && norm(b.secondPlace)===norm(state.actualBonus.secondPlace)) bonusPts += 4;
+    if(norm(b.firstPlace) && norm(b.firstPlace)===norm(state.actualBonus.firstPlace)) bonusPts += 5;
   }
-  return {matchPts,bonusPts,total:matchPts+bonusPts,exact,correctOutcome};
+  return {matchPts,bonusPts,total:matchPts+bonusPts,exact,outcomeRight};
 }
+
 function leaderboardRows(){
   return state.players.map(p=>({p,...scorePlayer(p)})).sort((a,b)=>b.total-a.total || b.exact-a.exact || b.matchPts-a.matchPts || a.p.name.localeCompare(b.p.name));
 }
@@ -281,28 +362,44 @@ function renderScoreboard(){
     const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':rank;
     body.innerHTML += `<tr>
       <td>${medal}</td><td>${r.p.name} <span class="rank-move">${movement}</span></td>
-      <td>${r.matchPts}</td><td>${r.bonusPts}</td><td>${r.exact}</td><td>${r.correctOutcome}</td><td><strong>${r.total}</strong></td>
+      <td>${r.matchPts}</td><td>${r.bonusPts}</td><td>${r.exact}</td><td>${r.outcomeRight}</td><td><strong>${r.total}</strong></td>
     </tr>`;
   });
   if(!rows.length) body.innerHTML='<tr><td colspan="7">Inga spelare ännu.</td></tr>';
   previousRanks=newRanks; store.set('previousRanks', previousRanks);
 }
 function renderMyTips(){
+  const profile=$('#myTipsProfile');
   const wrap=$('#myTipsList'); if(!wrap) return; wrap.innerHTML='';
   const pid=playerKey();
-  if(!pid){ wrap.innerHTML='<p class="muted">Skriv ditt namn för att se dina tips.</p>'; return; }
+  if(!pid){ if(profile) profile.innerHTML=''; wrap.innerHTML='<p class="muted">Skriv ditt namn för att se dina tips.</p>'; return; }
+  const player=state.players.find(p=>p.id===pid) || {id:pid,name:$('#playerName')?.value.trim()||'Du'};
+  const score=scorePlayer(player);
+  const rows=leaderboardRows();
+  const rank=rows.findIndex(r=>r.p.id===pid)+1;
+  if(profile){
+    profile.innerHTML=`<div class="profile-card card">
+      <div><p class="eyebrow-dark">Mina tips</p><h2>Hej ${player.name}!</h2><p class="muted">Din placering och dina poäng uppdateras när resultat sparas.</p></div>
+      <div class="profile-stats">
+        <div><strong>${score.total}</strong><span>poäng</span></div>
+        <div><strong>${rank>0?rank:'–'}</strong><span>placering</span></div>
+        <div><strong>${score.exact}</strong><span>exakta</span></div>
+      </div>
+    </div>`;
+  }
   const played=MATCHES.filter(m=>resultComplete(m));
   if(!played.length){ wrap.innerHTML='<p class="muted">Inga matcher har resultat ännu.</p>'; return; }
   played.forEach(m=>{
     const rm=resolvedMatch(m);
     const r=state.results[m.id]; const p=getPrediction(pid,m.id); const pts=pointsForPrediction(p,r);
     const row=document.createElement('div'); row.className='mini-result';
-    row.innerHTML=`<div><strong>${rm.home} – ${rm.away}</strong><br><span class="muted">Resultat: ${r.home_score}–${r.away_score}</span></div>
-      <div>${p?`Ditt tips: <strong>${p.pred_home}–${p.pred_away}</strong>`:'Inget tips'}</div>
+    row.innerHTML=`<div><strong>${teamLabel(rm.home)} <span class="versus">–</span> ${teamLabel(rm.away)}</strong><br><span class="muted">Resultat: ${r.home_score}–${r.away_score}</span></div>
+      <div>${p?`Ditt tips: <strong>${p.pred_outcome || outcome(p.pred_home,p.pred_away) || '?'} · ${p.pred_home}–${p.pred_away}</strong>`:'Inget tips'}</div>
       <div class="point-badge ${pts>0?'plus':'zero'}">+${pts}</div>`;
     wrap.appendChild(row);
   });
 }
+
 function countValues(values){
   const map={};
   values.map(v=>(v||'').trim()).filter(Boolean).forEach(v=>map[v]=(map[v]||0)+1);
@@ -318,15 +415,84 @@ function statBars(entries,total){
 function renderStats(){
   const finalStats=$('#finalStats'), minuteStats=$('#minuteStats'), winnerStats=$('#winnerStats');
   if(!finalStats) return;
-  const finalists=[]; state.bonus.forEach(b=>{ finalists.push(b.finalist1,b.finalist2); });
-  finalStats.innerHTML=statBars(countValues(finalists), finalists.filter(x=>(x||'').trim()).length);
-  const minutes=state.bonus.map(b=>b.finalGoalMinute ? String(b.finalGoalMinute) : '');
+  const podium=[]; state.bonus.forEach(b=>{ podium.push(b.semi1,b.semi2,b.semi3,b.semi4,b.firstPlace,b.secondPlace,b.thirdPlace); });
+  finalStats.innerHTML=statBars(countValues(podium), podium.filter(x=>(x||'').trim()).length);
+  const minutes=state.bonus.map(b=>b.firstYellowMinute || b.finalGoalMinute ? String(b.firstYellowMinute || b.finalGoalMinute) : '');
   minuteStats.innerHTML=statBars(countValues(minutes), minutes.filter(x=>(x||'').trim()).length);
-  const finalist1Tips = state.bonus.map(b=>b.finalist1);
-  winnerStats.innerHTML=statBars(countValues(finalist1Tips), finalist1Tips.filter(x=>(x||'').trim()).length);
+  const winnerTips = state.bonus.map(b=>b.firstPlace);
+  winnerStats.innerHTML=statBars(countValues(winnerTips), winnerTips.filter(x=>(x||'').trim()).length);
 }
+function displayTeamName(name){
+  const cleaned = cleanWinnerName(name || '');
+  if(!cleaned) return 'Ännu inte avgjort';
+  if(/^vinnare match/i.test(cleaned) || /^vinnare kvartsfinal/i.test(cleaned) || /^vinnare semifinal/i.test(cleaned) || /^förlorare semifinal/i.test(cleaned)) return 'Ännu inte avgjort';
+  return cleaned;
+}
+function teamLine(m, side){
+  const r = state.results[m.id] || {};
+  const rm = resolvedMatch(m);
+  const name = displayTeamName(rm[side]);
+  const winner = resultComplete(m) && winnerSide(m.id) === side;
+  const loser = resultComplete(m) && !winner;
+  const score = resultComplete(m) ? (side==='home' ? r.home_score : r.away_score) : '';
+  return `<div class="bracket-team ${winner?'winner':''} ${loser?'loser':''}"><span class="team-name">${teamLabel(name)}</span><strong>${score}</strong></div>`;
+}
+function bracketCard(m){
+  const status = resultComplete(m) ? 'Klar' : (new Date() > kickoffDate(m) ? 'Live' : 'Kommande');
+  return `<div class="bracket-card ${resultComplete(m)?'complete':''}">
+    <div class="bracket-meta"><span>${formatDateShort(m)}</span><em>${status}</em></div>
+    ${teamLine(m,'home')}
+    ${teamLine(m,'away')}
+  </div>`;
+}
+function renderBracket(){
+  const wrap = $('#bracketTree'); if(!wrap) return;
+  const rounds = [
+    ['16-delsfinal', MATCHES.filter(m=>m.group==='16-delsfinal')],
+    ['Åttondelsfinal', MATCHES.filter(m=>m.group==='Åttondelsfinal')],
+    ['Kvartsfinal', MATCHES.filter(m=>m.group==='Kvartsfinal')],
+    ['Semifinal', MATCHES.filter(m=>m.group==='Semifinal')],
+    ['Final/Brons', MATCHES.filter(m=>m.group==='Final' || m.group==='Bronsmatch')]
+  ];
+  wrap.innerHTML = rounds.map(([title,matches], idx)=>`<div class="bracket-round round-${idx}">
+    <h3>${title}</h3>
+    <div class="bracket-matches">${matches.map(bracketCard).join('')}</div>
+  </div>`).join('');
+}
+function renderDashboard(){
+  const el=$('#dashboard'); if(!el) return;
+  const rows=leaderboardRows();
+  const nm=nextMatch();
+  const played=playedCount();
+  const pct=Math.round((played/MATCHES.length)*100);
+  const nextHtml=nm ? `<div class="next-match-card"><div class="muted">Nästa match</div><h3>${teamLabel(resolvedMatch(nm).home)} <span class="versus">–</span> ${teamLabel(resolvedMatch(nm).away)}</h3><p>${formatDateShort(nm)}</p><button class="primary" onclick="document.querySelector('[data-view=tips]').click()">Tippa nu</button></div>` : `<div class="next-match-card"><h3>Turneringen är färdig</h3></div>`;
+  const top=rows.slice(0,5).map((r,i)=>`<div class="leader-row"><span>${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</span><strong>${r.p.name}</strong><em>${r.total} p</em></div>`).join('') || '<p class="muted">Inga deltagare ännu.</p>';
+  el.innerHTML=`<div class="dashboard-grid">
+    <div class="card hero-card"><p class="eyebrow-dark">Översikt</p><h2>VM-tipset 2026</h2><div class="kpi-grid"><div><strong>${state.players.length}</strong><span>deltagare</span></div><div><strong>${played}</strong><span>matcher spelade</span></div><div><strong>${pct}%</strong><span>klart</span></div></div><div class="progress"><span style="width:${pct}%"></span></div></div>
+    <div class="card">${nextHtml}</div>
+    <div class="card"><div class="section-title compact"><h2>Topplista</h2><button onclick="document.querySelector('[data-view=scoreboard]').click()">Visa allt</button></div>${top}</div>
+  </div>`;
+}
+function renderAllTips(){
+  const wrap=$('#allTipsList'); if(!wrap) return; wrap.innerHTML='';
+  if(!state.players.length){ wrap.innerHTML='<div class="card"><p class="muted">Inga spelare ännu.</p></div>'; return; }
+  wrap.innerHTML=state.players.map(player=>{
+    const score=scorePlayer(player);
+    const bonus=state.bonus.find(b=>b.player_id===player.id) || {};
+    const playedTips=MATCHES.map(m=>{
+      const rm=resolvedMatch(m), p=getPrediction(player.id,m.id), r=state.results[m.id];
+      const pts=pointsForPrediction(p,r);
+      return `<div class="all-tip-row"><span>${teamLabel(rm.home)} – ${teamLabel(rm.away)}</span><strong>${p?`${p.pred_outcome || outcome(p.pred_home,p.pred_away) || '?'} · ${p.pred_home||'?'}–${p.pred_away||'?'}`:'–'}</strong>${r&&r.status==='Complete'?`<em>+${pts}</em>`:''}</div>`;
+    }).join('');
+    return `<details class="card all-tip-card"><summary><span><strong>${player.name}</strong><small>${score.total} poäng</small></span><span class="point-badge plus">Visa tips</span></summary>
+      <div class="bonus-summary"><strong>Bonus:</strong> Semi: ${(bonus.semi1||'–')}, ${(bonus.semi2||'–')}, ${(bonus.semi3||'–')}, ${(bonus.semi4||'–')} · Guld: ${bonus.firstPlace||'–'} · Silver: ${bonus.secondPlace||'–'} · Brons: ${bonus.thirdPlace||'–'} · Gult kort: ${bonus.firstYellowMinute||'–'}</div>
+      <div class="all-tip-list">${playedTips}</div>
+    </details>`;
+  }).join('');
+}
+
 function renderDataPreview(){ const el=$('#dataPreview'); if(el) el.textContent=JSON.stringify(state,null,2); }
-function renderAll(){ renderMatches(); renderAdmin(); renderScoreboard(); renderMyTips(); renderStats(); renderDataPreview(); }
+function renderAll(){ renderMatches(); renderAdmin(); renderBracket(); renderDashboard(); renderScoreboard(); renderMyTips(); renderAllTips(); renderStats(); renderDataPreview(); }
 
 async function fetchResults(silent=false){
   try{
@@ -341,11 +507,15 @@ async function fetchResults(silent=false){
       const hs=x.home_score ?? x.homeScore ?? x.score_home;
       const as=x.away_score ?? x.awayScore ?? x.score_away;
       const status=x.status || x.state || (hs!=null && as!=null ? 'Complete':'Scheduled');
-      if(hs!=null && as!=null){
-        const s=String(status).toLowerCase();
-        state.results[id]={home_score:Number(hs),away_score:Number(as),status:s.includes('complete')||s.includes('final')||s.includes('finished')||s.includes('spelad')?'Complete':status,winner:x.winner || x.winner_name || x.winnerName || ''};
-        updated++;
-      }
+      const s=String(status).toLowerCase();
+      const next={...(state.results[id] || {})};
+      if(x.home || x.homeTeam || x.home_name) next.home = x.home || x.homeTeam || x.home_name;
+      if(x.away || x.awayTeam || x.away_name) next.away = x.away || x.awayTeam || x.away_name;
+      if(hs!=null && as!=null){ next.home_score=Number(hs); next.away_score=Number(as); }
+      next.status=s.includes('complete')||s.includes('final')||s.includes('finished')||s.includes('spelad')?'Complete':status;
+      next.winner=x.winner || x.winner_name || x.winnerName || next.winner || '';
+      state.results[id]=next;
+      updated++;
     });
     saveLocal(); await saveCloud(); renderAll(); if(!silent) toast(`Hämtade ${updated} resultat`);
   }catch(e){ if(!silent) toast('Kunde inte hämta resultat: '+e.message); }
@@ -353,6 +523,23 @@ async function fetchResults(silent=false){
 
 function bindEvents(){
   $$('.tab').forEach(btn=>btn.onclick=()=>{ $$('.tab,.view').forEach(x=>x.classList.remove('active')); btn.classList.add('active'); $('#'+btn.dataset.view).classList.add('active'); renderAll(); });
+  $('#themeToggle') && ($('#themeToggle').onclick=()=>{ document.body.classList.toggle('dark'); localStorage.setItem('theme', document.body.classList.contains('dark')?'dark':'light'); $('#themeToggle').textContent=document.body.classList.contains('dark')?'Ljust läge':'Mörkt läge'; });
+  $('#refreshAllTips') && ($('#refreshAllTips').onclick=()=>renderAllTips());
+  $('#adminPlayerName') && ($('#adminPlayerName').oninput=()=>renderAdminTips());
+  $('#saveAdminPredictions') && ($('#saveAdminPredictions').onclick=async()=>{
+    try{
+      const pid=getOrCreateNamedPlayer($('#adminPlayerName').value);
+      state.predictions = state.predictions.filter(p=>p.player_id!==pid);
+      MATCHES.forEach(m=>{
+        const ph=document.querySelector(`[data-aph="${m.id}"]`)?.value ?? '';
+        const pa=document.querySelector(`[data-apa="${m.id}"]`)?.value ?? '';
+        const po=document.querySelector(`[data-apo="${m.id}"]`)?.value || outcome(ph,pa);
+        if(ph!=='' || pa!=='' || po!=='') state.predictions.push({player_id:pid,match_id:m.id,pred_outcome:po,pred_home:ph,pred_away:pa,submitted_at:new Date().toISOString(), submitted_by_admin:true});
+      });
+      saveLocal(); await saveCloud(); renderAll(); toast('Tips sparade åt deltagaren.');
+    }catch(e){ toast(e.message); }
+  });
+
   $('#savePredictions').onclick=async()=>{
     try{
       const pid=ensurePlayer();
@@ -361,10 +548,10 @@ function bindEvents(){
       state.predictions.push(...lockedPredictions);
       MATCHES.forEach(m=>{
         if(isLocked(m)) return;
-        const tip=document.querySelector(`[data-tip="${m.id}"]`).value;
         const ph=document.querySelector(`[data-ph="${m.id}"]`).value;
         const pa=document.querySelector(`[data-pa="${m.id}"]`).value;
-        if(tip || ph!=='' || pa!=='') state.predictions.push({player_id:pid,match_id:m.id,tip_1x2:tip,pred_home:ph,pred_away:pa,submitted_at:new Date().toISOString()});
+        const po=document.querySelector(`[data-po="${m.id}"]`)?.value || outcome(ph,pa);
+        if(ph!=='' || pa!=='' || po!=='') state.predictions.push({player_id:pid,match_id:m.id,pred_outcome:po,pred_home:ph,pred_away:pa,submitted_at:new Date().toISOString()});
       });
       saveLocal(); await saveCloud(); renderAll(); toast('Tips sparade! Låsta matcher ändrades inte.');
     }catch(e){ toast(e.message); }
@@ -373,7 +560,7 @@ function bindEvents(){
     try{
       const pid=ensurePlayer();
       state.bonus=state.bonus.filter(b=>b.player_id!==pid);
-      state.bonus.push({player_id:pid,finalist1:$('#finalist1').value,finalist2:$('#finalist2').value,finalGoalMinute:$('#finalGoalMinute').value});
+      state.bonus.push({player_id:pid,semi1:$('#semi1').value,semi2:$('#semi2').value,semi3:$('#semi3').value,semi4:$('#semi4').value,firstPlace:$('#firstPlace').value,secondPlace:$('#secondPlace').value,thirdPlace:$('#thirdPlace').value,firstYellowMinute:$('#firstYellowMinute').value});
       saveLocal(); await saveCloud(); renderAll(); toast('Bonus sparad!');
     }catch(e){toast(e.message)}
   };
@@ -382,19 +569,22 @@ function bindEvents(){
       const hs=document.querySelector(`[data-rh="${m.id}"]`).value;
       const as=document.querySelector(`[data-ra="${m.id}"]`).value;
       const status=document.querySelector(`[data-status="${m.id}"]`).value;
-      state.results[m.id]={home_score:hs,away_score:as,status};
+      const current=state.results[m.id] || {};
+      state.results[m.id]={...current,home_score:hs,away_score:as,status};
     });
     saveLocal(); await saveCloud(); renderAll(); toast('Resultat sparade!');
   };
-  $('#saveActualBonus').onclick=async()=>{ state.actualBonus={finalist1:$('#actualFinalist1').value,finalist2:$('#actualFinalist2').value,finalGoalMinute:$('#actualFinalGoalMinute').value}; saveLocal(); await saveCloud(); renderAll(); toast('Faktisk bonus sparad!'); };
+  $('#saveActualBonus').onclick=async()=>{ state.actualBonus={semi1:$('#actualSemi1').value,semi2:$('#actualSemi2').value,semi3:$('#actualSemi3').value,semi4:$('#actualSemi4').value,firstPlace:$('#actualFirstPlace').value,secondPlace:$('#actualSecondPlace').value,thirdPlace:$('#actualThirdPlace').value,firstYellowMinute:$('#actualFirstYellowMinute').value}; saveLocal(); await saveCloud(); renderAll(); toast('Faktisk bonus sparad!'); };
   $('#refreshScoreboard').onclick=()=>renderAll();
-  $('#fetchResults').onclick=()=>fetchResults(false); $('#fetchResultsAdmin').onclick=()=>fetchResults(false);
+  $('#fetchResults').onclick=()=>fetchResults(false); $('#fetchResultsAdmin').onclick=()=>fetchResults(false); $('#fetchResultsBracket') && ($('#fetchResultsBracket').onclick=()=>fetchResults(false));
   $('#loadCloud').onclick=()=>loadCloud(false); $('#loadCloudData').onclick=()=>loadCloud(false);
   $('#exportJson').onclick=()=>{ renderDataPreview(); navigator.clipboard?.writeText(JSON.stringify(state,null,2)); toast('Data visas nedan och kopierades om möjligt'); };
   $('#clearLocal').onclick=()=>{ if(confirm('Rensa lokal data i denna webbläsare? Google Sheets påverkas inte.')){ localStorage.clear(); location.reload(); } };
-  ['#playerName','#playerEmail'].forEach(s=>$(s)?.addEventListener('change',fillPlayerData));
+  ['#playerName'].forEach(s=>$(s)?.addEventListener('change',fillPlayerData));
 }
 
+if(localStorage.getItem('theme')==='dark'){ document.body.classList.add('dark'); }
+if($('#themeToggle')) $('#themeToggle').textContent=document.body.classList.contains('dark')?'Ljust läge':'Mörkt läge';
 bindEvents();
 renderAll();
 loadCloud(true).then(()=>fetchResults(true)).catch(()=>{});
