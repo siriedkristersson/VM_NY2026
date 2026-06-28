@@ -56,6 +56,76 @@ function isTipMatchId(id){ return TIP_MATCH_IDS.has(String(id)); }
 
 // Slutspelsträd: här kopplas vinnare/förlorare vidare till nästa runda.
 // Hemsidan räknar ut lagnamnen dynamiskt från resultaten i state.results.
+
+
+// Robust koppling mellan extern resultatkälla och våra interna match-ID:n.
+// Vissa API:er byter egna match_id:n, därför matchar vi först via känd mappning
+// och därefter via lagnamn. Hemsidan fortsätter alltid använda MATCHES-id:n.
+const EXTERNAL_MATCH_ID_MAP = (() => {
+  const externalIds = [
+    '760486','760487','760488','760489','760490','760491','760492','760493',
+    '760494','760495','760496','760497','760498','760499','760500','760501',
+    '760502','760503','760504','760505','760506','760507','760508','760509',
+    '760510','760511','760512','760513','760514','760515','760516','760517'
+  ];
+  const map = {};
+  externalIds.forEach((externalId, index) => {
+    if (MATCHES[index]) map[externalId] = MATCHES[index].id;
+  });
+  return map;
+})();
+
+function canonicalTeamName(value){
+  return String(value || '')
+    .toLowerCase()
+    .replace(/^vinnare:\s*/i,'')
+    .replace(/^förlorare:\s*/i,'')
+    .replace(/&/g,'and')
+    .replace(/\busa\b/g,'united states')
+    .replace(/\bu\.s\.\b/g,'united states')
+    .replace(/\bcongo dr\b/g,'dr congo')
+    .replace(/\bcôte d.?ivoire\b/g,'ivory coast')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function internalMatchIdForIncoming(x){
+  const rawId = String(x?.id || x?.match_id || x?.game_id || '');
+  if (EXTERNAL_MATCH_ID_MAP[rawId]) return EXTERNAL_MATCH_ID_MAP[rawId];
+  if (MATCHES.some(m => String(m.id) === rawId)) return rawId;
+
+  const home = canonicalTeamName(x?.home || x?.homeTeam || x?.home_name || '');
+  const away = canonicalTeamName(x?.away || x?.awayTeam || x?.away_name || '');
+  if (!home || !away) return rawId;
+
+  // Matcha först mot lag som står i grundschemat.
+  let found = MATCHES.find(m => {
+    const mh = canonicalTeamName(m.home);
+    const ma = canonicalTeamName(m.away);
+    return (mh === home && ma === away) || (mh === away && ma === home);
+  });
+  if (found) return found.id;
+
+  // Matcha sedan mot dynamiskt uträknade lag i spelträdet.
+  found = MATCHES.find(m => {
+    const rm = resolvedMatch(m);
+    const mh = canonicalTeamName(rm?.home);
+    const ma = canonicalTeamName(rm?.away);
+    return (mh === home && ma === away) || (mh === away && ma === home);
+  });
+  return found ? found.id : rawId;
+}
+
+function normalizeResultsByInternalId(results){
+  const normalized = {};
+  Object.entries(results || {}).forEach(([key, value]) => {
+    const internalId = internalMatchIdForIncoming({ id:key, ...(value || {}) });
+    if (!internalId) return;
+    normalized[internalId] = { ...(normalized[internalId] || {}), ...(value || {}) };
+  });
+  return normalized;
+}
+
 const BRACKET_SLOTS = {
   '53452511': {home:{from:'53452545', type:'winner'}, away:{from:'53452547', type:'winner'}},
   '53452509': {home:{from:'53452541', type:'winner'}, away:{from:'53452543', type:'winner'}},
@@ -267,7 +337,8 @@ async function api(action,payload={}){
 }
 function mergeCloud(data){
   if(!data) return;
-  ['players','predictions','bonus','results','actualBonus'].forEach(k=>{ if(data[k] !== undefined) state[k]=data[k]; });
+  ['players','predictions','bonus','actualBonus'].forEach(k=>{ if(data[k] !== undefined) state[k]=data[k]; });
+  if(data.results !== undefined) state.results = normalizeResultsByInternalId(data.results);
   saveLocal(); if(canReplaceForms()) renderAll(); else { renderDashboard(); renderScoreboard(); renderBracket(); renderAllTips(); renderStats(); renderDataPreview(); }
 }
 async function loadCloud(silent=false){
@@ -629,7 +700,7 @@ async function fetchResults(silent=false){
     const rows = Array.isArray(data) ? data : (data.results || []);
     let updated=0;
     rows.forEach(x=>{
-      const id=String(x.id || x.match_id || x.game_id || ''); if(!id) return;
+      const id=internalMatchIdForIncoming(x); if(!id) return;
       const hs=x.home_score ?? x.homeScore ?? x.score_home;
       const as=x.away_score ?? x.awayScore ?? x.score_away;
       const status=x.status || x.state || (hs!=null && as!=null ? 'Complete':'Scheduled');
