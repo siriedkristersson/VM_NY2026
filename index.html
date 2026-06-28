@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VM-tipset 2026</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <div class="eyebrow">Internt spel</div>
+      <h1>VM-tipset 2026</h1>
+      <p>Tippa slutspelet, följ poängen live och se vem i familjen Måsabacka som prickar flest resultat.</p>
+    </div>
+    <div class="rules">
+      <span><strong>2p</strong> rätt 1/X/2</span>
+      <span><strong>5p</strong> rätt exakt resultat</span>
+      <span><strong>7p</strong> per rätt bonusfråga</span>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <div class="grid two">
+        <label>Namn
+          <input id="playerName" placeholder="Ditt namn" autocomplete="name" />
+        </label>
+        <label>Email/frivilligt ID
+          <input id="playerEmail" placeholder="valfritt, används för att hitta dina tips" autocomplete="email" />
+        </label>
+      </div>
+      <p class="muted small-top">Tipsen sparas lokalt i webbläsaren direkt. Kopplar du Google Sheets sparas de även där.</p>
+    </section>
+
+    <nav class="tabs">
+      <button class="tab active" data-view="tips">Tippa matcher</button>
+      <button class="tab" data-view="bonus">Bonusfrågor</button>
+      <button class="tab" data-view="scoreboard">Scoreboard</button>
+      <button class="tab" data-view="mytips">Mina poäng</button>
+      <button class="tab" data-view="stats">Statistik</button>
+      <button class="tab" data-view="admin">Admin/resultat</button>
+      <button class="tab" data-view="data">Sparad data</button>
+    </nav>
+
+    <section id="tips" class="view active">
+      <div class="card section-title sticky-save">
+        <div>
+          <h2>Matcher</h2>
+          <p class="muted">Välj 1/X/2 och skriv exakt resultat. Exempel: 2–1.</p>
+        </div>
+        <button id="savePredictions" class="primary">Spara tips</button>
+      </div>
+      <div id="matches"></div>
+    </section>
+
+    <section id="bonus" class="view">
+      <div class="card">
+        <h2>Bonusfrågor</h2>
+        <div class="grid three">
+          <label>Finallag 1
+            <input id="finalist1" placeholder="t.ex. Frankrike" />
+          </label>
+          <label>Finallag 2
+            <input id="finalist2" placeholder="t.ex. Argentina" />
+          </label>
+          <label>Vilken minut görs första målet i finalen?
+            <input id="finalGoalMinute" type="number" min="1" max="120" placeholder="t.ex. 23" />
+          </label>
+        </div>
+        <button id="saveBonus" class="primary small-top">Spara bonus</button>
+      </div>
+    </section>
+
+    <section id="scoreboard" class="view">
+      <div class="card section-title">
+        <div>
+          <h2>Scoreboard</h2>
+          <p class="muted">Poängen räknas på matcher som har status “spelad”.</p>
+        </div>
+        <div class="button-row">
+          <button id="loadCloud">Hämta sparad data</button>
+          <button id="fetchResults" class="primary">Hämta resultat</button>
+          <button id="refreshScoreboard">Uppdatera</button>
+        </div>
+      </div>
+      <div class="card table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Namn</th><th>Matchpoäng</th><th>Bonus</th><th>Exakta</th><th>Rätt 1/X/2</th><th>Totalt</th></tr></thead>
+          <tbody id="scoreboardBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+
+    <section id="mytips" class="view">
+      <div class="card">
+        <h2>Mina poäng per match</h2>
+        <p class="muted">Här syns dina poäng för matcher som redan är spelade.</p>
+        <div id="myTipsList"></div>
+      </div>
+    </section>
+
+    <section id="stats" class="view">
+      <div class="card">
+        <h2>Statistik</h2>
+        <p class="muted">Se vad alla har tippat på bonusfrågorna.</p>
+        <div class="grid three stat-grid">
+          <div>
+            <h3>Mest tippade finalister</h3>
+            <div id="finalStats"></div>
+          </div>
+          <div>
+            <h3>Mest tippade målminut i finalen</h3>
+            <div id="minuteStats"></div>
+          </div>
+          <div>
+            <h3>Populärast som finalist 1</h3>
+            <div id="winnerStats"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="admin" class="view">
+      <div class="card section-title">
+        <div>
+          <h2>Admin/resultat</h2>
+          <p class="muted">Använd detta om API inte är kopplat. Markera match som spelad för att räkna poäng.</p>
+        </div>
+        <div class="button-row">
+          <button id="fetchResultsAdmin">Hämta resultat</button>
+          <button id="saveResults" class="primary">Spara resultat</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Faktiska bonusresultat</h3>
+        <div class="grid three">
+          <label>Finallag 1<input id="actualFinalist1" /></label>
+          <label>Finallag 2<input id="actualFinalist2" /></label>
+          <label>Första målminut i finalen<input id="actualFinalGoalMinute" type="number" min="1" max="120" /></label>
+        </div>
+        <button id="saveActualBonus" class="primary small-top">Spara faktiska bonusresultat</button>
+      </div>
+      <div id="resultsAdmin"></div>
+    </section>
+
+    <section id="data" class="view">
+      <div class="card">
+        <h2>Så ser du sparad data</h2>
+        <p>Om Google Sheets är kopplat syns all data i ditt Sheet i flikarna <strong>Players</strong>, <strong>Predictions</strong>, <strong>Bonus</strong>, <strong>Results</strong> och <strong>Scoreboard</strong>.</p>
+        <p>Utan Google Sheets sparas tipsen bara i den här webbläsaren. Då kan du exportera JSON nedan.</p>
+        <div class="button-row">
+          <button id="loadCloudData">Hämta från Google Sheets</button>
+          <button id="exportJson">Exportera lokal data</button>
+          <button id="clearLocal" class="danger">Rensa lokal data</button>
+        </div>
+        <pre id="dataPreview"></pre>
+      </div>
+    </section>
+  </main>
+  <div id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
