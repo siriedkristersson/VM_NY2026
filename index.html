@@ -15,8 +15,8 @@
       <p>Tippa slutspelet, följ poängen live och se vem i familjen Måsabacka som prickar bäst.</p>
     </div>
     <div class="rules">
-      <span><strong>2p</strong> rätt exakt resultat</span>
-      <span><strong>1p</strong> rätt 1X2</span>
+      <span><strong>2p</strong> rätt exakt resultat i 16-delsfinalerna</span>
+      <span><strong>1p</strong> rätt 1X2 i 16-delsfinalerna</span>
       <span><strong>2p</strong> per rätt semifinallag</span>
       <span><strong>3p</strong> brons · <strong>4p</strong> silver · <strong>5p</strong> guld</span>
     </div>
@@ -33,7 +33,7 @@
           Skriv samma namn varje gång för att hitta dina tips.
         </div>
       </div>
-      <p class="muted small-top">Tipsen sparas lokalt i webbläsaren direkt. Kopplar du Google Sheets sparas de även där.</p>
+      <p class="muted small-top">Tipsen autosparas i webbläsaren medan du skriver. Klicka på Spara tips för att skicka dem till Google Sheets.</p>
     </section>
 
     <nav class="tabs app-nav">
@@ -56,10 +56,10 @@
     <section id="tips" class="view">
       <div class="card section-title sticky-save">
         <div>
-          <h2>Matcher</h2>
-          <p class="muted">Tippa både 1X2 och exakt resultat för varje match. Exempel: 1 och 2–1.</p>
+          <h2>16-delsfinaler</h2>
+          <p class="muted">Tippa 1X2 och exakt resultat endast för 16-delsfinalerna. Efter det tippar ni semifinal-lag, guld, silver och brons.</p>
         </div>
-        <button id="savePredictions" class="primary">Spara tips</button>
+        <div class="save-actions"><div id="draftStatus" class="draft-status"></div><button id="savePredictions" class="primary">Spara tips</button></div>
       </div>
       <div id="matches"></div>
     </section>
@@ -137,7 +137,7 @@
       <div id="myTipsProfile"></div>
       <div class="card">
         <h2>Mina poäng per match</h2>
-        <p class="muted">Här syns dina poäng för matcher som redan är spelade.</p>
+        <p class="muted">Här syns dina poäng för 16-delsfinaler som redan är spelade.</p>
         <div id="myTipsList"></div>
       </div>
     </section>
@@ -146,7 +146,7 @@
       <div class="card section-title">
         <div>
           <h2>Allas tips</h2>
-          <p class="muted">Klicka på en deltagare för att se matchtips och bonus.</p>
+          <p class="muted">Klicka på en deltagare för att se 16-delsfinaltips och bonus.</p>
         </div>
         <button id="refreshAllTips">Uppdatera</button>
       </div>
@@ -202,7 +202,7 @@
 
       <div class="card admin-tip-card">
         <h3>Lägg in tips åt deltagare</h3>
-        <p class="muted">Admin kan lägga in eller ändra tips även efter att matchen har börjat. Detta påverkar bara den deltagare du skriver in här.</p>
+        <p class="muted">Admin kan lägga in eller ändra deltagarnas tips även efter att matchen har börjat. Här gäller bara 16-delsfinalerna.</p>
         <div class="grid two">
           <label>Deltagarens namn
             <input id="adminPlayerName" placeholder="Skriv namn" />

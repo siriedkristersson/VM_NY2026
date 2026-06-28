@@ -22,6 +22,13 @@
  */
 const SPREADSHEET_ID = '1QowhUBvg0LvMw9Yvr9qqYgZrgDyZTLfTlH-VvIP1Yrk';
 
+const TIP_MATCH_IDS = [
+  '53452545','53452557','53452541','53452547','53452561','53452543','53452563','53452565',
+  '53452555','53452553','53452551','53452549','53452505','53452503','53452569','53452507'
+];
+function isTipMatchId_(id){ return TIP_MATCH_IDS.indexOf(String(id)) !== -1; }
+
+
 function doPost(e) {
   const body = JSON.parse(e.postData.contents || '{}');
   if (body.action === 'saveAll') return json(saveAll(body.payload || {}));
@@ -151,7 +158,7 @@ function scorePlayer_(player, data){
 
   const results = data.results || {};
   (data.predictions || [])
-    .filter(p => String(p.player_id) === String(player.id))
+    .filter(p => String(p.player_id) === String(player.id) && isTipMatchId_(p.match_id))
     .forEach(p => {
       const r = results[String(p.match_id)];
       if (!r || r.status !== 'Complete') return;

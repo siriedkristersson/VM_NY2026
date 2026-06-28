@@ -47,6 +47,13 @@ const MATCHES = [
   ['53452537','2026-07-19 21:00','Final','Vinnare semifinal 1','Vinnare semifinal 2']
 ].map(([id,date,group,home,away])=>({id,date,group,home,away}));
 
+// Tippning på matchresultat gäller bara 16-delsfinalerna.
+// Övriga rundor visas i spelträdet och används för bonus/placeringar.
+const TIP_ROUND = '16-delsfinal';
+const TIP_MATCHES = MATCHES.filter(m => m.group === TIP_ROUND);
+const TIP_MATCH_IDS = new Set(TIP_MATCHES.map(m => String(m.id)));
+function isTipMatchId(id){ return TIP_MATCH_IDS.has(String(id)); }
+
 // Slutspelsträd: här kopplas vinnare/förlorare vidare till nästa runda.
 // Hemsidan räknar ut lagnamnen dynamiskt från resultaten i state.results.
 const BRACKET_SLOTS = {
@@ -82,9 +89,88 @@ let state = {
   actualBonus: store.get('actualBonus') || {}
 };
 let previousRanks = store.get('previousRanks') || {};
+let isUserEditing = false;
+let lastEditAt = 0;
+let renderTimer = null;
+const DRAFT_KEY_PREFIX = 'vmTipsetDraft:';
+const EDIT_GRACE_MS = 30000;
+
+function activeViewId(){ return document.querySelector('.view.active')?.id || ''; }
+function draftKey(id=playerKey()){ return id ? DRAFT_KEY_PREFIX + id : null; }
+function currentDraft(){ const k=draftKey(); return k ? (store.get(k) || null) : null; }
+function markEditing(){ isUserEditing = true; lastEditAt = Date.now(); updateDraftStatus(); }
+function canReplaceForms(){ return !isUserEditing || (Date.now() - lastEditAt > EDIT_GRACE_MS); }
+function clearEditingSoon(){ setTimeout(()=>{ if(Date.now()-lastEditAt>=EDIT_GRACE_MS){ isUserEditing=false; updateDraftStatus(); } }, EDIT_GRACE_MS + 250); }
+function updateDraftStatus(message){
+  const el=$('#draftStatus'); if(!el) return;
+  const d=currentDraft();
+  if(message){ el.textContent=message; el.className='draft-status active'; return; }
+  if(d?.dirty){ el.textContent='Osparade ändringar sparade lokalt'; el.className='draft-status warning'; }
+  else { el.textContent=''; el.className='draft-status'; }
+}
+function scheduleRender(){ clearTimeout(renderTimer); renderTimer=setTimeout(()=>{ if(canReplaceForms()) renderAll(); }, 350); }
+
 
 function saveLocal(){ Object.entries(state).forEach(([k,v])=>store.set(k,v)); }
-function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+function collectPredictionDraft(){
+  const pid=playerKey(); if(!pid) return null;
+  const predictions=[];
+  TIP_MATCHES.forEach(m=>{
+    const ph=document.querySelector(`[data-ph="${m.id}"]`)?.value ?? '';
+    const pa=document.querySelector(`[data-pa="${m.id}"]`)?.value ?? '';
+    const po=document.querySelector(`[data-po="${m.id}"]`)?.value || outcome(ph,pa) || '';
+    if(ph!=='' || pa!=='' || po!=='') predictions.push({player_id:pid,match_id:m.id,pred_outcome:po,pred_home:ph,pred_away:pa});
+  });
+  return {
+    player_id: pid,
+    name: $('#playerName')?.value.trim() || '',
+    predictions,
+    bonus: {
+      semi1:$('#semi1')?.value || '', semi2:$('#semi2')?.value || '', semi3:$('#semi3')?.value || '', semi4:$('#semi4')?.value || '',
+      firstPlace:$('#firstPlace')?.value || '', secondPlace:$('#secondPlace')?.value || '', thirdPlace:$('#thirdPlace')?.value || '', firstYellowMinute:$('#firstYellowMinute')?.value || ''
+    },
+    dirty:true,
+    updated_at:new Date().toISOString()
+  };
+}
+function saveDraftFromDom(){ const d=collectPredictionDraft(); if(!d) return; store.set(DRAFT_KEY_PREFIX+d.player_id,d); updateDraftStatus(); }
+function markDraftSaved(pid=playerKey(), message='Sparat till Google Sheets'){
+  const k=draftKey(pid); if(k){ const d=store.get(k); if(d){ d.dirty=false; d.saved_at=new Date().toISOString(); store.set(k,d); } }
+  isUserEditing=false; updateDraftStatus(message); setTimeout(()=>updateDraftStatus(),1600);
+}
+function clearDraft(pid=playerKey()){ const k=draftKey(pid); if(k) localStorage.removeItem(k); updateDraftStatus('Sparat'); setTimeout(()=>updateDraftStatus(),1600); }
+
+
+function sortedSimplePreds(list){
+  return (list||[]).map(p=>({match_id:String(p.match_id), pred_outcome:p.pred_outcome||'', pred_home:String(p.pred_home??''), pred_away:String(p.pred_away??'')})).sort((a,b)=>a.match_id.localeCompare(b.match_id));
+}
+function draftMatchesState(pid=playerKey()){
+  const d=currentDraft(); if(!d) return true;
+  const statePreds=sortedSimplePreds(state.predictions.filter(p=>p.player_id===pid && isTipMatchId(p.match_id)));
+  const draftPreds=sortedSimplePreds((d.predictions||[]).filter(p=>isTipMatchId(p.match_id)));
+  const b=state.bonus.find(x=>x.player_id===pid) || {};
+  const db=d.bonus || {};
+  const bonusKeys=['semi1','semi2','semi3','semi4','firstPlace','secondPlace','thirdPlace','firstYellowMinute'];
+  return JSON.stringify(statePreds)===JSON.stringify(draftPreds) && bonusKeys.every(k=>(b[k]||'')===(db[k]||''));
+}
+function updateDraftAfterSave(pid=playerKey(), message='Sparat till Google Sheets'){
+  const k=draftKey(pid); const d=k ? store.get(k) : null;
+  if(d && draftMatchesState(pid)){ d.dirty=false; d.saved_at=new Date().toISOString(); store.set(k,d); isUserEditing=false; }
+  updateDraftStatus(message); setTimeout(()=>updateDraftStatus(),1700);
+}
+function applyDraftToDom(){
+  const d=currentDraft(); if(!d || !d.dirty) return;
+  d.predictions?.forEach(p=>{
+    const h=document.querySelector(`[data-ph="${p.match_id}"]`); if(h && !h.disabled) h.value=p.pred_home ?? '';
+    const a=document.querySelector(`[data-pa="${p.match_id}"]`); if(a && !a.disabled) a.value=p.pred_away ?? '';
+    const o=document.querySelector(`[data-po="${p.match_id}"]`); if(o && !o.disabled) o.value=p.pred_outcome || outcome(p.pred_home,p.pred_away) || '';
+  });
+  const b=d.bonus || {};
+  ['semi1','semi2','semi3','semi4','firstPlace','secondPlace','thirdPlace','firstYellowMinute'].forEach(id=>{ const el=$('#'+id); if(el && b[id]!==undefined) el.value=b[id] || ''; });
+  updateDraftStatus();
+}
+
+function toast(msg){ const t=$('#toast'); if(!t) return; t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 function playerKey(){ const name=$('#playerName')?.value.trim() || ''; return name.toLowerCase(); }
 function ensurePlayer(){
   const name=$('#playerName').value.trim();
@@ -182,7 +268,7 @@ async function api(action,payload={}){
 function mergeCloud(data){
   if(!data) return;
   ['players','predictions','bonus','results','actualBonus'].forEach(k=>{ if(data[k] !== undefined) state[k]=data[k]; });
-  saveLocal(); renderAll();
+  saveLocal(); if(canReplaceForms()) renderAll(); else { renderDashboard(); renderScoreboard(); renderBracket(); renderAllTips(); renderStats(); renderDataPreview(); }
 }
 async function loadCloud(silent=false){
   if(!apiEnabled()){ if(!silent) toast('Ingen Google Sheets-URL är inlagd i app.js'); return; }
@@ -260,11 +346,11 @@ function matchRow(m,admin){
 
 function renderMatches(){
   const wrap=$('#matches'); if(!wrap) return; wrap.innerHTML='';
-  const byGroup = MATCHES.reduce((a,m)=>((a[m.group]??=[]).push(m),a),{});
-  ['16-delsfinal','Åttondelsfinal','Kvartsfinal','Semifinal','Bronsmatch','Final'].filter(g=>byGroup[g]).forEach(g=>{
-    const div=document.createElement('div'); div.className='match-group'; div.innerHTML=`<h3 class="group-heading">${g}</h3>`;
-    byGroup[g].forEach(m=> div.appendChild(matchRow(m,false)) ); wrap.appendChild(div);
-  });
+  const div=document.createElement('div');
+  div.className='match-group';
+  div.innerHTML=`<h3 class="group-heading">16-delsfinaler</h3><p class="muted">Här tippar ni 1X2 och exakt resultat. Efter 16-delsfinalen tippar ni inte fler matchresultat.</p>`;
+  TIP_MATCHES.forEach(m=> div.appendChild(matchRow(m,false)) );
+  wrap.appendChild(div);
 }
 function renderAdmin(){
   const wrap=$('#resultsAdmin'); if(!wrap) return; wrap.innerHTML='';
@@ -309,13 +395,12 @@ function renderAdminTips(){
   const wrap=$('#adminTipsMatches'); if(!wrap) return;
   const pid=adminPlayerKey();
   wrap.innerHTML='';
-  if(!pid){ wrap.innerHTML='<p class="muted">Skriv ett namn för att visa matcherna.</p>'; return; }
-  const byGroup = MATCHES.reduce((a,m)=>((a[m.group]??=[]).push(m),a),{});
-  ['16-delsfinal','Åttondelsfinal','Kvartsfinal','Semifinal','Bronsmatch','Final'].filter(g=>byGroup[g]).forEach(g=>{
-    const div=document.createElement('div'); div.className='match-group admin-tip-group'; div.innerHTML=`<h4 class="group-heading">${g}</h4>`;
-    byGroup[g].forEach(m=> div.appendChild(adminTipRow(m, getPrediction(pid,m.id))) );
-    wrap.appendChild(div);
-  });
+  if(!pid){ wrap.innerHTML='<p class="muted">Skriv ett namn för att visa 16-delsfinalerna.</p>'; return; }
+  const div=document.createElement('div');
+  div.className='match-group admin-tip-group';
+  div.innerHTML=`<h4 class="group-heading">16-delsfinaler</h4><p class="muted">Admin lägger bara in 1X2 och resultat för 16-delsfinalerna.</p>`;
+  TIP_MATCHES.forEach(m=> div.appendChild(adminTipRow(m, getPrediction(pid,m.id))) );
+  wrap.appendChild(div);
 }
 
 function fillPlayerData(){
@@ -323,11 +408,11 @@ function fillPlayerData(){
   if(!id) return;
   const b=state.bonus.find(x=>x.player_id===id);
   if(b){ $('#semi1').value=b.semi1||''; $('#semi2').value=b.semi2||''; $('#semi3').value=b.semi3||''; $('#semi4').value=b.semi4||''; $('#firstPlace').value=b.firstPlace||''; $('#secondPlace').value=b.secondPlace||''; $('#thirdPlace').value=b.thirdPlace||''; $('#firstYellowMinute').value=b.firstYellowMinute||b.finalGoalMinute||''; }
-  renderMatches(); renderMyTips();
+  renderMatches(); applyDraftToDom(); renderMyTips();
 }
 function scorePlayer(player){
   let matchPts=0, exact=0, outcomeRight=0;
-  state.predictions.filter(p=>p.player_id===player.id).forEach(p=>{
+  state.predictions.filter(p=>p.player_id===player.id && isTipMatchId(p.match_id)).forEach(p=>{
     const r=state.results[p.match_id];
     if(!r || r.status!=='Complete') return;
     const pts = pointsForPrediction(p,r);
@@ -387,7 +472,7 @@ function renderMyTips(){
       </div>
     </div>`;
   }
-  const played=MATCHES.filter(m=>resultComplete(m));
+  const played=TIP_MATCHES.filter(m=>resultComplete(m));
   if(!played.length){ wrap.innerHTML='<p class="muted">Inga matcher har resultat ännu.</p>'; return; }
   played.forEach(m=>{
     const rm=resolvedMatch(m);
@@ -479,7 +564,7 @@ function renderAllTips(){
   wrap.innerHTML=state.players.map(player=>{
     const score=scorePlayer(player);
     const bonus=state.bonus.find(b=>b.player_id===player.id) || {};
-    const playedTips=MATCHES.map(m=>{
+    const playedTips=TIP_MATCHES.map(m=>{
       const rm=resolvedMatch(m), p=getPrediction(player.id,m.id), r=state.results[m.id];
       const pts=pointsForPrediction(p,r);
       return `<div class="all-tip-row"><span>${teamLabel(rm.home)} – ${teamLabel(rm.away)}</span><strong>${p?`${p.pred_outcome || outcome(p.pred_home,p.pred_away) || '?'} · ${p.pred_home||'?'}–${p.pred_away||'?'}`:'–'}</strong>${r&&r.status==='Complete'?`<em>+${pts}</em>`:''}</div>`;
@@ -492,7 +577,7 @@ function renderAllTips(){
 }
 
 function renderDataPreview(){ const el=$('#dataPreview'); if(el) el.textContent=JSON.stringify(state,null,2); }
-function renderAll(){ renderMatches(); renderAdmin(); renderBracket(); renderDashboard(); renderScoreboard(); renderMyTips(); renderAllTips(); renderStats(); renderDataPreview(); }
+function renderAll(){ renderMatches(); renderAdmin(); renderBracket(); renderDashboard(); renderScoreboard(); renderMyTips(); renderAllTips(); renderStats(); renderDataPreview(); applyDraftToDom(); }
 
 async function fetchResults(silent=false){
   try{
@@ -530,7 +615,7 @@ function bindEvents(){
     try{
       const pid=getOrCreateNamedPlayer($('#adminPlayerName').value);
       state.predictions = state.predictions.filter(p=>p.player_id!==pid);
-      MATCHES.forEach(m=>{
+      TIP_MATCHES.forEach(m=>{
         const ph=document.querySelector(`[data-aph="${m.id}"]`)?.value ?? '';
         const pa=document.querySelector(`[data-apa="${m.id}"]`)?.value ?? '';
         const po=document.querySelector(`[data-apo="${m.id}"]`)?.value || outcome(ph,pa);
@@ -540,20 +625,29 @@ function bindEvents(){
     }catch(e){ toast(e.message); }
   });
 
+  document.addEventListener('input', e=>{
+    const t=e.target;
+    if(!t) return;
+    const isTipInput = t.matches('[data-ph],[data-pa],[data-po],#semi1,#semi2,#semi3,#semi4,#firstPlace,#secondPlace,#thirdPlace,#firstYellowMinute');
+    if(isTipInput){ markEditing(); saveDraftFromDom(); clearEditingSoon(); }
+  });
+  $('#playerName')?.addEventListener('input', ()=>{ updateDraftStatus(); });
+  $('#playerName')?.addEventListener('change', ()=>{ fillPlayerData(); applyDraftToDom(); });
+
   $('#savePredictions').onclick=async()=>{
     try{
       const pid=ensurePlayer();
-      const lockedPredictions = state.predictions.filter(p=>{ const m=MATCHES.find(x=>x.id===p.match_id); return p.player_id===pid && m && isLocked(m); });
+      const lockedPredictions = state.predictions.filter(p=>{ const m=TIP_MATCHES.find(x=>x.id===p.match_id); return p.player_id===pid && m && isLocked(m); });
       state.predictions = state.predictions.filter(p=>p.player_id!==pid);
       state.predictions.push(...lockedPredictions);
-      MATCHES.forEach(m=>{
+      TIP_MATCHES.forEach(m=>{
         if(isLocked(m)) return;
         const ph=document.querySelector(`[data-ph="${m.id}"]`).value;
         const pa=document.querySelector(`[data-pa="${m.id}"]`).value;
         const po=document.querySelector(`[data-po="${m.id}"]`)?.value || outcome(ph,pa);
         if(ph!=='' || pa!=='' || po!=='') state.predictions.push({player_id:pid,match_id:m.id,pred_outcome:po,pred_home:ph,pred_away:pa,submitted_at:new Date().toISOString()});
       });
-      saveLocal(); await saveCloud(); renderAll(); toast('Tips sparade! Låsta matcher ändrades inte.');
+      saveLocal(); await saveCloud(); updateDraftAfterSave(pid); renderAll(); toast('Tips sparade! Låsta matcher ändrades inte.');
     }catch(e){ toast(e.message); }
   };
   $('#saveBonus').onclick=async()=>{
@@ -561,7 +655,7 @@ function bindEvents(){
       const pid=ensurePlayer();
       state.bonus=state.bonus.filter(b=>b.player_id!==pid);
       state.bonus.push({player_id:pid,semi1:$('#semi1').value,semi2:$('#semi2').value,semi3:$('#semi3').value,semi4:$('#semi4').value,firstPlace:$('#firstPlace').value,secondPlace:$('#secondPlace').value,thirdPlace:$('#thirdPlace').value,firstYellowMinute:$('#firstYellowMinute').value});
-      saveLocal(); await saveCloud(); renderAll(); toast('Bonus sparad!');
+      saveLocal(); await saveCloud(); updateDraftAfterSave(pid, 'Bonus sparad till Google Sheets'); renderAll(); toast('Bonus sparad!');
     }catch(e){toast(e.message)}
   };
   $('#saveResults').onclick=async()=>{
@@ -580,7 +674,6 @@ function bindEvents(){
   $('#loadCloud').onclick=()=>loadCloud(false); $('#loadCloudData').onclick=()=>loadCloud(false);
   $('#exportJson').onclick=()=>{ renderDataPreview(); navigator.clipboard?.writeText(JSON.stringify(state,null,2)); toast('Data visas nedan och kopierades om möjligt'); };
   $('#clearLocal').onclick=()=>{ if(confirm('Rensa lokal data i denna webbläsare? Google Sheets påverkas inte.')){ localStorage.clear(); location.reload(); } };
-  ['#playerName'].forEach(s=>$(s)?.addEventListener('change',fillPlayerData));
 }
 
 if(localStorage.getItem('theme')==='dark'){ document.body.classList.add('dark'); }
@@ -588,5 +681,5 @@ if($('#themeToggle')) $('#themeToggle').textContent=document.body.classList.cont
 bindEvents();
 renderAll();
 loadCloud(true).then(()=>fetchResults(true)).catch(()=>{});
-setInterval(()=>renderAll(), 60000);
-if(AUTO_FETCH_RESULTS) setInterval(()=>fetchResults(true), AUTO_FETCH_INTERVAL_MS);
+setInterval(()=>{ if(canReplaceForms()) renderAll(); }, 60000);
+if(AUTO_FETCH_RESULTS) setInterval(()=>{ if(canReplaceForms()) fetchResults(true); }, AUTO_FETCH_INTERVAL_MS);
