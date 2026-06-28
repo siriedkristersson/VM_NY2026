@@ -1,87 +1,29 @@
-# VM-tipset 2026
+# VM-tipset – Familjen Måsabacka
 
-En enkel webapp för internt VM-tips.
+## Vad som är nytt i denna version
 
-## Filer
-- `index.html` – hemsidan
-- `style.css` – design
-- `app.js` – matcher, tips, poängräkning och API-koppling
-- `apps-script.gs` – Google Sheets-backend
+- Google Sheet-ID är redan inlagt i `apps-script.gs`.
+- Resultat hämtas automatiskt från ESPN via Apps Script när hemsidan öppnas och därefter ungefär var 5:e minut.
+- När en match är färdig uppdateras nästa runda automatiskt på hemsidan, t.ex. ändras `Vinnare: South Africa/Canada` till det lag som faktiskt gått vidare.
+- Scoreboard räknas om automatiskt och skrivs även till fliken `Scoreboard` i Google Sheet.
+- Bonusfrågor: VM-finalist 1, VM-finalist 2 och minuten för första målet i finalen.
 
-## Så öppnar du lokalt
-Dubbelklicka på `index.html`.
+## Viktigt vid uppladdning
 
-Utan Google Sheets sparas data i webbläsarens `localStorage`. Du kan se den under fliken **Sparad data**.
+1. Lägg `index.html`, `style.css` och `app.js` där hemsidan ligger.
+2. Öppna Google Apps Script.
+3. Ersätt hela koden med innehållet i `apps-script.gs`.
+4. Klicka spara.
+5. Gå till `Implementera` → `Hantera implementeringar` → pennan → välj `Ny version` → `Implementera`.
 
-## Så ser du sparad data
-### Utan Google Sheets
-Gå till fliken **Sparad data** och klicka **Exportera lokal data**.
+Du behöver inte ändra något manuellt i Google Sheet. Scriptet skapar/uppdaterar flikarna själv.
 
-### Med Google Sheets
-1. Skapa ett Google Sheet.
-2. Kopiera Sheet-ID från URL:en.
-3. Öppna Extensions > Apps Script.
-4. Klistra in `apps-script.gs`.
-5. Byt `SPREADSHEET_ID` i koden.
-6. Deploy > New deployment > Web app.
-7. Välj:
-   - Execute as: Me
-   - Who has access: Anyone with the link
-8. Kopiera Web App URL.
-9. Klistra in den i `API_URL` högst upp i `app.js`.
+## Google Sheet
 
-Då skapas flikarna:
-- Players
-- Predictions
-- Bonus
-- Results
-- ActualBonus
-- Scoreboard
+Filen använder detta Sheet-ID:
 
-## Resultat och scoreboard
-Det finns två sätt:
+`1QowhUBvg0LvMw9Yvr9qqYgZrgDyZTLfTlH-VvIP1Yrk`
 
-### 1. Manuell admin
-Gå till **Admin/resultat**, fyll i resultat och välj **Spelad**. Klicka **Spara resultat**.
+## Om lag inte syns direkt i nästa runda
 
-### 2. Automatisk API-hämtning
-Antingen:
-- lägg in en direkt endpoint i `RESULT_API_URL` i `app.js`, eller
-- lägg in `RESULT_API_URL` som Script Property i Apps Script.
-
-Förväntat JSON-format:
-```json
-[
-  {"id":"66456904", "home_score":2, "away_score":0, "status":"Complete"}
-]
-```
-
-`id` måste matcha match-ID i `MATCHES` i `app.js`.
-
-## Poäng
-- Rätt 1/X/2: 2 poäng
-- Rätt exakt resultat: 5 poäng
-- Rätt finallag: 7 poäng per lag
-- Rätt skyttekung: 7 poäng
-
-
-## Uppdatering 2026-06-28
-- Matchlistan är uppdaterad med klara 16-delsfinaler och hela slutspelsträdet.
-- Bonusfrågan "Flest mål i VM" är borttagen.
-- Bonusfrågorna är nu: VM-finalist 1, VM-finalist 2 och första målminut i finalen.
-- Scoreboard uppdateras automatiskt om Apps Script-filen också ersätts/deployas på nytt. Utan uppdaterad backend kan resultaten fortfarande fyllas i manuellt i Admin/resultat.
-
-
-## Var sparas poängen?
-
-Alla tips och resultat sparas i Google Sheet-filen som anges i `SPREADSHEET_ID` i `apps-script.gs`.
-
-Flikarna är:
-- `Players` – deltagare
-- `Predictions` – alla matchtips
-- `Bonus` – bonusfrågor
-- `Results` – hämtade eller manuellt ifyllda resultat
-- `ActualBonus` – facit för bonusfrågor
-- `Scoreboard` – sammanräknad tabell med totalpoäng
-
-Efter denna uppdatering skriver Apps Script även ut poängen i fliken `Scoreboard` varje gång data sparas eller resultat hämtas.
+Det krävs att matchen har status `Complete` och att resultatet är hämtat/sparat. När det finns ett färdigt resultat uppdateras lagnamnet automatiskt på sidan.

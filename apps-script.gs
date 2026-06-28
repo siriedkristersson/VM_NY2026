@@ -18,7 +18,7 @@
  *   Den ska returnera JSON: [{id, home_score, away_score, status}]
  * - Om RESULT_API_URL lämnas tom hämtar scriptet själv från ESPNs publika scoreboard-API.
  */
-const SPREADSHEET_ID = 'KListra_in_ditt_Google_Sheet_ID_här';
+const SPREADSHEET_ID = '1QowhUBvg0LvMw9Yvr9qqYgZrgDyZTLfTlH-VvIP1Yrk';
 
 function doPost(e) {
   const body = JSON.parse(e.postData.contents || '{}');
@@ -39,7 +39,7 @@ function saveAll(data){
   write('Predictions',['player_id','match_id','tip_1x2','pred_home','pred_away','submitted_at'], (data.predictions||[]).map(p=>[p.player_id,p.match_id,p.tip_1x2,p.pred_home,p.pred_away,p.submitted_at]));
   write('Bonus',['player_id','finalist1','finalist2','finalGoalMinute'], (data.bonus||[]).map(b=>[b.player_id,b.finalist1,b.finalist2,b.finalGoalMinute]));
   const results = data.results || {};
-  write('Results',['match_id','home_score','away_score','status'], Object.keys(results).map(id=>[id,results[id].home_score,results[id].away_score,results[id].status]));
+  write('Results',['match_id','home_score','away_score','status','winner'], Object.keys(results).map(id=>[id,results[id].home_score,results[id].away_score,results[id].status,results[id].winner||'']));
   const a=data.actualBonus||{};
   write('ActualBonus',['finalist1','finalist2','finalGoalMinute'], [[a.finalist1||'',a.finalist2||'',a.finalGoalMinute||'']]);
   writeScoreboard_(data);
@@ -51,7 +51,7 @@ function getAll(){
   const predictions = read('Predictions').map(p=>({player_id:String(p.player_id), match_id:String(p.match_id), tip_1x2:p.tip_1x2, pred_home:p.pred_home, pred_away:p.pred_away, submitted_at:p.submitted_at}));
   const bonus = read('Bonus').map(b=>({player_id:String(b.player_id), finalist1:b.finalist1, finalist2:b.finalist2, finalGoalMinute:b.finalGoalMinute}));
   const results = {};
-  read('Results').forEach(r=>{ results[String(r.match_id)] = {home_score:r.home_score, away_score:r.away_score, status:r.status}; });
+  read('Results').forEach(r=>{ results[String(r.match_id)] = {home_score:r.home_score, away_score:r.away_score, status:r.status, winner:r.winner||''}; });
   const actual = read('ActualBonus')[0] || {};
   return {ok:true, players, predictions, bonus, results, actualBonus:{finalist1:actual.finalist1||'', finalist2:actual.finalist2||'', finalGoalMinute:actual.finalGoalMinute||''}};
 }
@@ -76,7 +76,7 @@ function fetchResultsFromProvider(){
     const rawStatus = String(x.status || x.state || '').toLowerCase();
     const isComplete = rawStatus.includes('complete') || rawStatus.includes('final') || rawStatus.includes('finished') || x.completed === true;
     if(hs !== null && hs !== undefined && as !== null && as !== undefined){
-      current.results[id] = {home_score:hs, away_score:as, status:isComplete ? 'Complete' : (x.status || 'Scheduled')};
+      current.results[id] = {home_score:hs, away_score:as, status:isComplete ? 'Complete' : (x.status || 'Scheduled'), winner:x.winner || x.winner_name || x.winnerName || ''};
     }
   });
   saveAll(current);
@@ -99,12 +99,14 @@ function fetchEspnWorldCupResults_(){
         const home = competitors.find(c=>c.homeAway === 'home');
         const away = competitors.find(c=>c.homeAway === 'away');
         if(!home || !away) return;
+        const winnerComp = competitors.find(c => c.winner === true);
         out.push({
           id: String(ev.id),
           home_score: home.score,
           away_score: away.score,
           status: ev.status && ev.status.type && ev.status.type.completed ? 'Complete' : (ev.status?.type?.name || 'Scheduled'),
-          completed: ev.status && ev.status.type && ev.status.type.completed
+          completed: ev.status && ev.status.type && ev.status.type.completed,
+          winner: winnerComp && winnerComp.team ? (winnerComp.team.displayName || winnerComp.team.shortDisplayName || '') : ''
         });
       });
     } catch(err) {}

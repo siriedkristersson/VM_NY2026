@@ -47,6 +47,27 @@ const MATCHES = [
   ['53452537','2026-07-19 21:00','Final','Vinnare semifinal 1','Vinnare semifinal 2']
 ].map(([id,date,group,home,away])=>({id,date,group,home,away}));
 
+// Slutspelsträd: här kopplas vinnare/förlorare vidare till nästa runda.
+// Hemsidan räknar ut lagnamnen dynamiskt från resultaten i state.results.
+const BRACKET_SLOTS = {
+  '53452511': {home:{from:'53452545', type:'winner'}, away:{from:'53452547', type:'winner'}},
+  '53452509': {home:{from:'53452541', type:'winner'}, away:{from:'53452543', type:'winner'}},
+  '53452517': {home:{from:'53452557', type:'winner'}, away:{from:'53452561', type:'winner'}},
+  '53452519': {home:{from:'53452563', type:'winner'}, away:{from:'53452565', type:'winner'}},
+  '53452513': {home:{from:'53452549', type:'winner'}, away:{from:'53452551', type:'winner'}},
+  '53452515': {home:{from:'53452553', type:'winner'}, away:{from:'53452555', type:'winner'}},
+  '53452521': {home:{from:'53452569', type:'winner'}, away:{from:'53452503', type:'winner'}},
+  '53452523': {home:{from:'53452505', type:'winner'}, away:{from:'53452507', type:'winner'}},
+  '53452525': {home:{from:'53452509', type:'winner'}, away:{from:'53452511', type:'winner'}},
+  '53452527': {home:{from:'53452513', type:'winner'}, away:{from:'53452515', type:'winner'}},
+  '53452529': {home:{from:'53452517', type:'winner'}, away:{from:'53452519', type:'winner'}},
+  '53452531': {home:{from:'53452521', type:'winner'}, away:{from:'53452523', type:'winner'}},
+  '53452533': {home:{from:'53452525', type:'winner'}, away:{from:'53452527', type:'winner'}},
+  '53452535': {home:{from:'53452529', type:'winner'}, away:{from:'53452531', type:'winner'}},
+  '53452539': {home:{from:'53452533', type:'loser'}, away:{from:'53452535', type:'loser'}},
+  '53452537': {home:{from:'53452533', type:'winner'}, away:{from:'53452535', type:'winner'}}
+};
+
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
 const store = {
@@ -79,6 +100,42 @@ function outcome(h,a){ if(h===''||a===''||h==null||a==null) return ''; h=Number(
 function kickoffDate(m){ return new Date(m.date.replace(' ', 'T') + ':00'); }
 function lockDate(m){ return new Date(kickoffDate(m).getTime() - LOCK_MINUTES_BEFORE_KICKOFF*60000); }
 function resultComplete(m){ const r=state.results[m.id]; return r && r.status==='Complete' && r.home_score!=='' && r.away_score!=='' && r.home_score!=null && r.away_score!=null; }
+function matchById(id){ return MATCHES.find(m=>m.id===String(id)); }
+function cleanWinnerName(value){ return (value || '').replace(/^Vinnare:\s*/i,'').replace(/^Förlorare:\s*/i,'').trim(); }
+function winnerSide(matchId){
+  const m=matchById(matchId), r=state.results[String(matchId)];
+  if(!m || !r || r.status!=='Complete') return null;
+  const visible = BRACKET_SLOTS[String(matchId)] ? resolvedMatch(m) : m;
+  const winner = cleanWinnerName(r.winner || r.winner_name || r.winnerName || '');
+  if(winner){
+    if(norm(winner)===norm(visible.home) || norm(winner)===norm(m.home)) return 'home';
+    if(norm(winner)===norm(visible.away) || norm(winner)===norm(m.away)) return 'away';
+    return winner;
+  }
+  const h=Number(r.home_score), a=Number(r.away_score);
+  if(Number.isFinite(h) && Number.isFinite(a) && h!==a) return h>a ? 'home' : 'away';
+  return null;
+}
+function participantFromSlot(slot){
+  if(!slot) return '';
+  const source=matchById(slot.from);
+  if(!source) return '';
+  const side=winnerSide(slot.from);
+  if(!side) return `${slot.type==='loser'?'Förlorare':'Vinnare'}: ${source.home}/${source.away}`;
+  if(side==='home' || side==='away'){
+    const winner = side==='home' ? source.home : source.away;
+    const loser = side==='home' ? source.away : source.home;
+    return slot.type==='loser' ? loser : winner;
+  }
+  // Om API:t skickar ett vinnarnamn direkt som inte matchar exakt mot hemma/borta.
+  if(slot.type==='winner') return side;
+  return `${slot.type==='loser'?'Förlorare':'Vinnare'}: ${source.home}/${source.away}`;
+}
+function resolvedMatch(m){
+  const slots=BRACKET_SLOTS[m.id];
+  if(!slots) return {...m};
+  return {...m, home: participantFromSlot(slots.home) || m.home, away: participantFromSlot(slots.away) || m.away};
+}
 function isLocked(m){ return new Date() >= lockDate(m) || resultComplete(m); }
 function countdownText(m){
   if(resultComplete(m)) return 'Spelad';
@@ -124,6 +181,7 @@ function pointsForPrediction(p,r){
   return pts;
 }
 function matchRow(m,admin){
+  const rm=resolvedMatch(m);
   const r=state.results[m.id]||{};
   const locked=isLocked(m);
   const pid=playerKey();
@@ -135,7 +193,7 @@ function matchRow(m,admin){
     <div class="date">${m.date}</div>
     <div class="result-pill">${m.group}</div>
   </div>
-  <div class="teams">${m.home} – ${m.away}</div>`;
+  <div class="teams">${rm.home} – ${rm.away}</div>`;
 
   if(admin){
     div.innerHTML += `${predictionInputs('r',m,{home:r.home_score,away:r.away_score})}
@@ -155,9 +213,9 @@ function matchRow(m,admin){
     <label>1/X/2
       <select class="tip-select" data-tip="${m.id}" ${locked?'disabled':''}>
         <option value="" ${tipValue===''?'selected':''}>Välj</option>
-        <option value="1" ${tipValue==='1'?'selected':''}>1 - ${m.home}</option>
+        <option value="1" ${tipValue==='1'?'selected':''}>1 - ${rm.home}</option>
         <option value="X" ${tipValue==='X'?'selected':''}>X - oavgjort</option>
-        <option value="2" ${tipValue==='2'?'selected':''}>2 - ${m.away}</option>
+        <option value="2" ${tipValue==='2'?'selected':''}>2 - ${rm.away}</option>
       </select>
     </label>
     ${predictionInputs('p',m,{home:ph,away:pa},locked)}
@@ -236,9 +294,10 @@ function renderMyTips(){
   const played=MATCHES.filter(m=>resultComplete(m));
   if(!played.length){ wrap.innerHTML='<p class="muted">Inga matcher har resultat ännu.</p>'; return; }
   played.forEach(m=>{
+    const rm=resolvedMatch(m);
     const r=state.results[m.id]; const p=getPrediction(pid,m.id); const pts=pointsForPrediction(p,r);
     const row=document.createElement('div'); row.className='mini-result';
-    row.innerHTML=`<div><strong>${m.home} – ${m.away}</strong><br><span class="muted">Resultat: ${r.home_score}–${r.away_score}</span></div>
+    row.innerHTML=`<div><strong>${rm.home} – ${rm.away}</strong><br><span class="muted">Resultat: ${r.home_score}–${r.away_score}</span></div>
       <div>${p?`Ditt tips: <strong>${p.pred_home}–${p.pred_away}</strong>`:'Inget tips'}</div>
       <div class="point-badge ${pts>0?'plus':'zero'}">+${pts}</div>`;
     wrap.appendChild(row);
@@ -284,7 +343,7 @@ async function fetchResults(silent=false){
       const status=x.status || x.state || (hs!=null && as!=null ? 'Complete':'Scheduled');
       if(hs!=null && as!=null){
         const s=String(status).toLowerCase();
-        state.results[id]={home_score:Number(hs),away_score:Number(as),status:s.includes('complete')||s.includes('finished')||s.includes('spelad')?'Complete':status};
+        state.results[id]={home_score:Number(hs),away_score:Number(as),status:s.includes('complete')||s.includes('final')||s.includes('finished')||s.includes('spelad')?'Complete':status,winner:x.winner || x.winner_name || x.winnerName || ''};
         updated++;
       }
     });
