@@ -1,53 +1,40 @@
-# VM-tipset 2026 – Version 4
+# VM-tipset 2026 – V5 read-only
 
-Den här versionen synkar datamodellen mellan hemsidan, `app.js`, `apps-script.gs` och Google Sheets.
+Den här versionen utgår helt från Google Sheets.
 
-## Viktiga ändringar
+## Filer på GitHub Pages
+Ladda upp/ersätt:
+- `index.html`
+- `style.css`
+- `app.js`
 
-- En knapp: **Spara allt**.
-- Matchtips och bonus sparas samtidigt till Google Sheets.
-- Bonusfält töms/laddas om när man byter namn, så Siris tips ligger inte kvar när man skriver André.
-- Bonusmodellen är nu:
-  - `semi1`
-  - `semi2`
-  - `semi3`
-  - `semi4`
-  - `firstPlace`
-  - `secondPlace`
-  - `thirdPlace`
-  - `firstYellowMinute`
-- Apps Script skapar saknade kolumner automatiskt.
+## Apps Script
+1. Öppna Google Sheet.
+2. Tillägg → Apps Script.
+3. Klistra in `apps-script.gs`.
+4. Kontrollera att raden nedan stämmer:
+   `const SPREADSHEET_ID = '1q2TURZdn4NxhZWufIOq57MDaEBDULw6mAfa8ZMd4Pms';`
+5. Implementera → Ny implementering → Webbapp.
+6. Kör som: Jag.
+7. Åtkomst: Alla.
+8. Kopiera Web App URL.
+9. Klistra in URL:en i `app.js` där det står:
+   `const API_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';`
 
-## Viktigt vid uppdatering
+## Ark som används
+- Players
+- Predictions
+- Bonus
+- Results
+- ActualBonus
+- Scoreboard skapas automatiskt.
 
-1. Ladda upp/ersätt dessa filer i GitHub:
-   - `index.html`
-   - `style.css`
-   - `app.js`
-   - `README.md`
+## Poäng
+- 2p exakt resultat
+- 1p rätt 1X2
+- 2p per rätt semifinallag, ordning spelar ingen roll
+- 3p brons
+- 4p silver
+- 5p guld
 
-2. Öppna Google Apps Script och ersätt hela koden med nya `apps-script.gs`.
-
-3. Publicera om Apps Script:
-   - Deploy
-   - Manage deployments
-   - Edit
-   - New version
-   - Deploy
-
-4. Öppna Google Sheet. Arket **Bonus** ska ha dessa kolumner:
-
-```text
-player_id | semi1 | semi2 | semi3 | semi4 | firstPlace | secondPlace | thirdPlace | firstYellowMinute
-```
-
-Om gamla kolumner som `finalist1`, `finalist2`, `topScorer` finns kvar kan de ligga kvar, men de används inte längre. Efter nästa sparning skrivs Bonus om enligt nya strukturen.
-
-## Poängregler
-
-- 2p för exakt resultat i 16-delsfinal.
-- 1p för rätt 1X2 i 16-delsfinal.
-- 2p per rätt semifinallag, oavsett ordning.
-- 3p rätt brons.
-- 4p rätt silver.
-- 5p rätt guld.
+Hemsidan skriver inte tips. Den läser bara från kalkylbladet.
