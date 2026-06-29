@@ -20,8 +20,12 @@ let state = {
   lastUpdated: null
 };
 
+const TEAM_TRANSLATIONS = {
+  'south africa':'Sydafrika','canada':'Kanada','brazil':'Brasilien','japan':'Japan','germany':'Tyskland','paraguay':'Paraguay','netherlands':'Nederländerna','morocco':'Marocko','ivory coast':'Elfenbenskusten','norway':'Norge','france':'Frankrike','sweden':'Sverige','mexico':'Mexiko','ecuador':'Ecuador','england':'England','dr congo':'DR Kongo','congo dr':'DR Kongo','belgium':'Belgien','senegal':'Senegal','united states':'USA','usa':'USA','bosnia and herzegovina':'Bosnien och Hercegovina','bosnia herzegovina':'Bosnien och Hercegovina','spain':'Spanien','austria':'Österrike','portugal':'Portugal','croatia':'Kroatien','switzerland':'Schweiz','algeria':'Algeriet','australia':'Australien','egypt':'Egypten','argentina':'Argentina','cape verde':'Kap Verde','cabo verde':'Kap Verde','colombia':'Colombia','ghana':'Ghana'
+};
+
 const FLAGS = {
-  'south africa':'🇿🇦','canada':'🇨🇦','brazil':'🇧🇷','japan':'🇯🇵','germany':'🇩🇪','paraguay':'🇵🇾','netherlands':'🇳🇱','morocco':'🇲🇦','ivory coast':'🇨🇮','norway':'🇳🇴','france':'🇫🇷','sweden':'🇸🇪','mexico':'🇲🇽','ecuador':'🇪🇨','england':'🏴','dr congo':'🇨🇩','belgium':'🇧🇪','senegal':'🇸🇳','united states':'🇺🇸','bosnia and herzegovina':'🇧🇦','spain':'🇪🇸','austria':'🇦🇹','portugal':'🇵🇹','croatia':'🇭🇷','switzerland':'🇨🇭','algeria':'🇩🇿','australia':'🇦🇺','egypt':'🇪🇬','argentina':'🇦🇷','cape verde':'🇨🇻','colombia':'🇨🇴','ghana':'🇬🇭'
+  'sydafrika':'🇿🇦','south africa':'🇿🇦','kanada':'🇨🇦','canada':'🇨🇦','brasilien':'🇧🇷','brazil':'🇧🇷','japan':'🇯🇵','tyskland':'🇩🇪','germany':'🇩🇪','paraguay':'🇵🇾','nederländerna':'🇳🇱','netherlands':'🇳🇱','marocko':'🇲🇦','morocco':'🇲🇦','elfenbenskusten':'🇨🇮','ivory coast':'🇨🇮','norge':'🇳🇴','norway':'🇳🇴','frankrike':'🇫🇷','france':'🇫🇷','sverige':'🇸🇪','sweden':'🇸🇪','mexiko':'🇲🇽','mexico':'🇲🇽','ecuador':'🇪🇨','england':'🏴󠁧󠁢󠁥󠁮󠁧󠁿','dr kongo':'🇨🇩','dr congo':'🇨🇩','congo dr':'🇨🇩','belgien':'🇧🇪','belgium':'🇧🇪','senegal':'🇸🇳','usa':'🇺🇸','united states':'🇺🇸','bosnien och hercegovina':'🇧🇦','bosnia and herzegovina':'🇧🇦','spanien':'🇪🇸','spain':'🇪🇸','österrike':'🇦🇹','austria':'🇦🇹','portugal':'🇵🇹','kroatien':'🇭🇷','croatia':'🇭🇷','schweiz':'🇨🇭','switzerland':'🇨🇭','algeriet':'🇩🇿','algeria':'🇩🇿','australien':'🇦🇺','australia':'🇦🇺','egypten':'🇪🇬','egypt':'🇪🇬','argentina':'🇦🇷','kap verde':'🇨🇻','cape verde':'🇨🇻','colombia':'🇨🇴','ghana':'🇬🇭'
 };
 
 const BRACKET_SLOTS = {
@@ -54,9 +58,23 @@ async function api(action){
 function toast(msg){ const el=$('#toast'); el.textContent=msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),2600); }
 function norm(v){ return String(v||'').trim().toLowerCase(); }
 function clean(v){ return String(v||'').replace(/^Vinnare:\s*/i,'').replace(/^Förlorare:\s*/i,'').trim(); }
-function flag(name){ return FLAGS[norm(clean(name))] || '⚽'; }
-function teamHTML(name){ const n=displayName(name); return `<span class="team-label"><span>${flag(n)}</span><span>${n}</span></span>`; }
-function displayName(name){ const n = clean(name); if(!n || /^vinnare match/i.test(n) || /^förlorare match/i.test(n)) return 'Ännu inte avgjort'; return n; }
+function swedishName(name){
+  const n = clean(name);
+  const key = norm(n);
+  return TEAM_TRANSLATIONS[key] || n;
+}
+function flag(name){ return FLAGS[norm(clean(name))] || FLAGS[norm(swedishName(name))] || '⚽'; }
+function teamHTML(name){ const n=displayName(name); return `<span class="team-label"><span class="flag">${flag(n)}</span><span>${n}</span></span>`; }
+function displayName(name){ const n = clean(name); if(!n || /^vinnare match/i.test(n) || /^förlorare match/i.test(n)) return 'Ännu inte avgjort'; return swedishName(n); }
+function localizeComment(text){
+  let out = String(text || '');
+  Object.keys(TEAM_TRANSLATIONS).sort((a,b)=>b.length-a.length).forEach(en=>{
+    const sv = TEAM_TRANSLATIONS[en];
+    const re = new RegExp('\\b' + en.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi');
+    out = out.replace(re, sv);
+  });
+  return out;
+}
 function match(id){ return state.matches.find(m=>String(m.id)===String(id)); }
 function result(id){ return state.results[String(id)] || {}; }
 function isComplete(id){ const r=result(id); return r.status==='Complete' && r.home_score!=='' && r.away_score!=='' && r.home_score!=null && r.away_score!=null; }
@@ -101,10 +119,11 @@ function pointsForPrediction(p,r){
 function statBars(items,total){
   if(!items || !items.length) return '<p class="muted">Ingen data ännu.</p>';
   const max=Math.max(...items.map(x=>Number(x.value||0)),1);
-  return items.slice(0,8).map(x=>{
+  return items.slice(0,8).map((x,idx)=>{
     const pct=Math.round(Number(x.value||0)/max*100);
     const share=total ? ` · ${Math.round(Number(x.value||0)/total*100)}%` : '';
-    return `<div class="stat-row"><div><strong>${flag(x.name)} ${x.name}</strong><div class="bar"><span style="width:${pct}%"></span></div></div><em>${x.value}${share}</em></div>`;
+    const name = swedishName(x.name);
+    return `<div class="stat-row"><span class="rank-number">${idx+1}</span><div><strong>${flag(name)} ${name}</strong><div class="bar"><span style="width:${pct}%"></span></div></div><em>${x.value}${share}</em></div>`;
   }).join('');
 }
 
@@ -114,14 +133,15 @@ function renderDashboard(){
   const pct=state.matches.length ? Math.round(played/state.matches.length*100) : 0;
   const next=state.matches.filter(m=>!isComplete(m.id)).sort((a,b)=>kickoff(a)-kickoff(b))[0];
   const top=(state.scoreboard||[]).slice(0,5).map((r,i)=>`<div class="leader-row"><span>${i+1}</span><strong>${r.name}</strong><em>${r.total_points} p</em></div>`).join('') || '<p class="muted">Inga deltagare ännu.</p>';
-  const nextHtml=next ? `<p class="muted">Nästa match</p><h3>${teamHTML(resolvedMatch(next).home)} <span class="versus">–</span> ${teamHTML(resolvedMatch(next).away)}</h3><p>${kickoff(next).toLocaleString('sv-SE',{weekday:'short',day:'numeric',month:'numeric',hour:'2-digit',minute:'2-digit'})}</p>` : '<h3>Turneringen är färdig</h3>';
+  const nextHtml=next ? `<div class="card-icon">📅</div><p class="muted">Nästa match</p><h3>${teamHTML(resolvedMatch(next).home)} <span class="versus">–</span> ${teamHTML(resolvedMatch(next).away)}</h3><p class="match-date">${kickoff(next).toLocaleString('sv-SE',{weekday:'short',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})}</p>` : '<h3>Turneringen är färdig</h3>';
+  const comment = localizeComment(state.comment || 'Laddar senaste läget...');
   el.innerHTML=`<div class="dashboard-grid">
-    <div class="card hero-card"><p class="muted">Översikt</p><h2>VM-tipset 2026</h2><div class="kpi-grid"><div><strong>${state.players.length}</strong><span>deltagare</span></div><div><strong>${played}</strong><span>matcher spelade</span></div><div><strong>${pct}%</strong><span>klart</span></div></div><div class="progress"><span style="width:${pct}%"></span></div></div>
-    <div class="card ai-card"><h3>Senaste läget</h3><p>${state.comment || 'Laddar kommentar...'}</p></div>
-    <div class="card">${nextHtml}</div>
-    <div class="card"><h3>Topp 5</h3>${top}</div>
-    <div class="card"><h3>Mest tippad världsmästare</h3>${statBars(state.stats.champion, state.bonus.length)}</div>
-    <div class="card"><h3>Mest tippade semifinalister</h3>${statBars(state.stats.semifinalists, state.bonus.length*4)}</div>
+    <div class="card hero-card"><div class="card-icon">👥</div><p class="muted">Översikt</p><h2>VM-tipset 2026</h2><div class="kpi-grid"><div><strong>${state.players.length}</strong><span>Deltagare</span></div><div><strong>${played}</strong><span>Matcher spelade</span></div><div><strong>${pct}%</strong><span>Turneringen klar</span></div></div><div class="progress"><span style="width:${pct}%"></span></div><p class="progress-label">${played} av ${state.matches.length} matcher spelade</p></div>
+    <div class="card ai-card"><div class="card-icon">⭐</div><h3>Senaste läget</h3><div class="comment-box"><p>${comment}</p><small>Uppdaterad ${state.lastUpdated ? state.lastUpdated.toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit'}) : 'nyss'}</small></div></div>
+    <div class="card next-card">${nextHtml}</div>
+    <div class="card"><div class="card-icon">🏅</div><h3>Topp 5</h3>${top}</div>
+    <div class="card stat-card-large"><div class="card-icon">🏆</div><h3>Mest tippad världsmästare</h3>${statBars(state.stats.champion, state.bonus.length)}</div>
+    <div class="card stat-card-large"><div class="card-icon">👥</div><h3>Mest tippade semifinalister</h3>${statBars(state.stats.semifinalists, state.bonus.length*4)}</div>
   </div>`;
 }
 function renderScoreboard(){
@@ -145,7 +165,7 @@ function renderAllTips(){
       const pr=prediction(p.player_id||p.id,m.id), r=result(m.id), pts=pointsForPrediction(pr,r), rm=resolvedMatch(m);
       return `<div class="all-tip-row"><span>${teamHTML(rm.home)} – ${teamHTML(rm.away)}</span><strong>${pr?`${pr.pred_outcome||outcome(pr.pred_home,pr.pred_away)||'?'} · ${pr.pred_home}–${pr.pred_away}`:'–'}</strong>${isComplete(m.id)?`<em>+${pts}</em>`:''}</div>`;
     }).join('');
-    return `<details class="card all-tip-card"><summary><span><strong>${p.name||p.player_id}</strong><small>${sc.total_points} poäng</small></span><span class="badge">Visa tips</span></summary><div class="bonus-summary"><strong>Bonus:</strong> Semi: ${b.semi1||'–'}, ${b.semi2||'–'}, ${b.semi3||'–'}, ${b.semi4||'–'} · Guld: ${b.firstPlace||'–'} · Silver: ${b.secondPlace||'–'} · Brons: ${b.thirdPlace||'–'} · Gult kort: ${b.firstYellowMinute||'–'}</div><div class="all-tip-list">${tips}</div></details>`;
+    return `<details class="card all-tip-card"><summary><span><strong>${p.name||p.player_id}</strong><small>${sc.total_points} poäng</small></span><span class="badge">Visa tips</span></summary><div class="bonus-summary"><strong>Bonus:</strong> Semi: ${b.semi1?displayName(b.semi1):'–'}, ${b.semi2?displayName(b.semi2):'–'}, ${b.semi3?displayName(b.semi3):'–'}, ${b.semi4?displayName(b.semi4):'–'} · Guld: ${b.firstPlace?displayName(b.firstPlace):'–'} · Silver: ${b.secondPlace?displayName(b.secondPlace):'–'} · Brons: ${b.thirdPlace?displayName(b.thirdPlace):'–'} · Gult kort: ${b.firstYellowMinute||'–'}</div><div class="all-tip-list">${tips}</div></details>`;
   }).join('') || '<div class="card"><p class="muted">Inga tips inlästa.</p></div>';
 }
 function renderStats(){
@@ -153,7 +173,7 @@ function renderStats(){
   $('#semiStats').innerHTML=statBars(state.stats.semifinalists, state.bonus.length*4);
   $('#outcomeStats').innerHTML=statBars(state.stats.best1x2, null);
   $('#exactStats').innerHTML=statBars(state.stats.bestExact, null);
-  $('#aiComment').innerHTML=`<p>${state.comment || 'Ingen kommentar ännu.'}</p>`;
+  $('#aiComment').innerHTML=`<p>${localizeComment(state.comment || 'Ingen kommentar ännu.')}</p>`;
 }
 function renderData(){ $('#dataPreview').textContent=JSON.stringify(state,null,2); }
 function renderAll(){ renderDashboard(); renderScoreboard(); renderBracket(); renderAllTips(); renderStats(); renderData(); $('#updatedAt').textContent=state.lastUpdated ? `Senast uppdaterad: ${state.lastUpdated.toLocaleTimeString('sv-SE')}` : ''; }
@@ -173,9 +193,7 @@ function bind(){
   $$('.tab').forEach(btn=>btn.onclick=()=>{ $$('.tab,.view').forEach(x=>x.classList.remove('active')); btn.classList.add('active'); $('#'+btn.dataset.view).classList.add('active'); renderAll(); });
   $('#refreshBtn').onclick=()=>loadData(false);
   $('#refreshResultsBtn').onclick=()=>refreshResults();
-  $('#themeBtn').onclick=()=>{ document.body.classList.toggle('dark'); localStorage.setItem('theme',document.body.classList.contains('dark')?'dark':'light'); $('#themeBtn').textContent=document.body.classList.contains('dark')?'Ljust läge':'Mörkt läge'; };
 }
-if(localStorage.getItem('theme')==='dark') document.body.classList.add('dark');
 bind(); renderAll(); loadData(true);
 setInterval(()=>loadData(true), AUTO_REFRESH_MS);
 setInterval(()=>refreshResults(), AUTO_RESULT_REFRESH_MS);

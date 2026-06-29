@@ -38,3 +38,7 @@ Ladda upp/ersätt:
 - 5p guld
 
 Hemsidan skriver inte tips. Den läser bara från kalkylbladet.
+
+
+## Dark-only fix
+Light mode är borttaget. Hemsidan använder alltid dark mode. Byt `index.html`, `style.css` och `app.js` på GitHub. Apps Script behöver inte ändras för denna fix.

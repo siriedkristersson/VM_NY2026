@@ -229,6 +229,14 @@ function norm_(v){ return String(v || '').trim().toLowerCase().normalize('NFD').
 function alias_(v){ const n = norm_(v); const map = {'cote d ivoire':'ivory coast','ivory coast':'ivory coast','congo dr':'dr congo','dr congo':'dr congo','usa':'united states','u s':'united states','united states':'united states','cape verde islands':'cape verde','cabo verde':'cape verde','bosnia herzegovina':'bosnia and herzegovina'}; return map[n] || n; }
 function unique_(arr){ return arr.filter(function(v,i,a){ return v && a.indexOf(v) === i; }); }
 
+function svTeam_(v){
+  const n = norm_(v);
+  const map = {
+    'south africa':'Sydafrika','canada':'Kanada','brazil':'Brasilien','japan':'Japan','germany':'Tyskland','paraguay':'Paraguay','netherlands':'Nederländerna','morocco':'Marocko','ivory coast':'Elfenbenskusten','norway':'Norge','france':'Frankrike','sweden':'Sverige','mexico':'Mexiko','ecuador':'Ecuador','england':'England','dr congo':'DR Kongo','congo dr':'DR Kongo','belgium':'Belgien','senegal':'Senegal','united states':'USA','usa':'USA','bosnia and herzegovina':'Bosnien och Hercegovina','spain':'Spanien','austria':'Österrike','portugal':'Portugal','croatia':'Kroatien','switzerland':'Schweiz','algeria':'Algeriet','australia':'Australien','egypt':'Egypten','argentina':'Argentina','cape verde':'Kap Verde','cabo verde':'Kap Verde','colombia':'Colombia','ghana':'Ghana'
+  };
+  return map[n] || String(v || '');
+}
+
 function internalMatchIdFromValue_(value){
   const id = String(value || '').trim();
   if (MATCHES.some(function(m){ return m.id === id; })) return id;
@@ -272,7 +280,7 @@ function buildComment_(data, scoreboard){
     const pred = (data.predictions || []).find(function(x){ return key_(x.player_id) === key_(p.player_id || p.id) && String(x.match_id) === last.id; });
     return pointsForPrediction_(pred, r) > 0;
   }).length;
-  return last.home + ' – ' + last.away + ' slutade ' + r.home_score + '–' + r.away_score + '. ' + correct + ' av ' + (data.players || []).length + ' fick poäng. ' + scoreboard[0].name + ' leder med ' + scoreboard[0].total_points + ' poäng.';
+  return svTeam_(last.home) + ' – ' + svTeam_(last.away) + ' slutade ' + r.home_score + '–' + r.away_score + '. ' + correct + ' av ' + (data.players || []).length + ' fick poäng. ' + scoreboard[0].name + ' leder med ' + scoreboard[0].total_points + ' poäng.';
 }
 
 function fetchEspnResults_(){
