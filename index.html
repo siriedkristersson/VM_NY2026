@@ -7,85 +7,38 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div class="bg-glow"></div>
   <header class="topbar">
     <div>
-      <h1><span class="title-icon">🏆</span> VM-tippning med familjen Måsabacka</h1>
-      <p>Scoreboard, spelträd och statistik baserat på familjens tips.</p>
-      <span id="updatedAt" class="updated-at"></span>
+      <p class="eyebrow">VM-tippning med familjen Måsabacka</p>
+      <h1>VM-tipset 2026</h1>
+      <p id="updatedAt" class="muted"></p>
     </div>
-    <div class="top-actions">
-      <button id="refreshBtn">↻ Uppdatera data</button>
-      <button id="refreshResultsBtn">⚽ Uppdatera resultat nu</button>
+    <div class="actions">
+      <button id="refreshBtn">Uppdatera</button>
+      <button id="refreshResultsBtn" class="primary">Hämta resultat</button>
     </div>
   </header>
 
   <nav class="tabs">
-    <button class="tab active" data-view="start">Start</button>
-    <button class="tab" data-view="scoreboard">Ställning</button>
+    <button class="tab active" data-view="home">Dashboard</button>
+    <button class="tab" data-view="scoreboard">Scoreboard</button>
     <button class="tab" data-view="bracket">Spelträd</button>
-    <button class="tab" data-view="alltips">Alla tips</button>
+    <button class="tab" data-view="tips">Alla tips</button>
     <button class="tab" data-view="stats">Statistik</button>
     <button class="tab" data-view="data">Data</button>
   </nav>
 
   <main>
-    <section id="start" class="view active">
-      <div id="dashboard"></div>
-    </section>
-
-    <section id="scoreboard" class="view">
-      <div class="section-title">
-        <h2>Ställning</h2>
-        <p>2p exakt resultat, 1p rätt 1X2, 2p per rätt semifinallag, 3p brons, 4p silver, 5p guld.</p>
-      </div>
-      <div class="card table-card">
-        <table>
-          <thead><tr><th>#</th><th>Namn</th><th>Matchpoäng</th><th>Bonus</th><th>Exakta</th><th>1X2</th><th>Total</th></tr></thead>
-          <tbody id="scoreboardBody"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <section id="bracket" class="view">
-      <div class="section-title">
-        <h2>Spelträd</h2>
-        <p>Uppdateras när Results i Google Sheet uppdateras.</p>
-      </div>
-      <div id="bracketTree" class="bracket"></div>
-    </section>
-
-    <section id="alltips" class="view">
-      <div class="section-title">
-        <h2>Alla tips</h2>
-        <p>Alla deltagares tips från Google Sheet. Tippning sker inte på hemsidan.</p>
-      </div>
-      <div id="allTipsList"></div>
-    </section>
-
-    <section id="stats" class="view">
-      <div class="section-title">
-        <h2>Statistik</h2>
-        <p>Fun facts baserat på alla tips.</p>
-      </div>
-      <div class="stats-grid">
-        <div class="card"><h3>Mest tippad världsmästare</h3><div id="winnerStats"></div></div>
-        <div class="card"><h3>Mest tippade semifinalister</h3><div id="semiStats"></div></div>
-        <div class="card"><h3>Bäst på 1X2</h3><div id="outcomeStats"></div></div>
-        <div class="card"><h3>Flest exakta resultat</h3><div id="exactStats"></div></div>
-        <div class="card wide"><h3>Senaste läget</h3><div id="aiComment"></div></div>
-      </div>
-    </section>
-
-    <section id="data" class="view">
-      <div class="section-title">
-        <h2>Data</h2>
-        <p>Felsökning: senaste data hemsidan hämtat från Apps Script.</p>
-      </div>
-      <pre id="dataPreview" class="card"></pre>
-    </section>
+    <section id="home" class="view active"><div id="dashboard"></div></section>
+    <section id="scoreboard" class="view"><div class="card"><h2>Scoreboard</h2><div class="table-wrap"><table><thead><tr><th>#</th><th>Namn</th><th>Matcher</th><th>Bonus</th><th>Exakta</th><th>1X2</th><th>Total</th></tr></thead><tbody id="scoreboardBody"></tbody></table></div></div></section>
+    <section id="bracket" class="view"><div class="section-title"><h2>Spelträd</h2><p class="muted">Uppdateras när vinnare blir klara.</p></div><div id="bracketTree" class="bracket"></div></section>
+    <section id="tips" class="view"><div class="section-title"><h2>Alla tips</h2><p class="muted">Tipsen läses från Google Sheets.</p></div><div id="allTipsList"></div></section>
+    <section id="stats" class="view"><div class="stats-grid"><div class="card"><h3>Mest tippad världsmästare</h3><div id="winnerStats"></div></div><div class="card"><h3>Mest tippade semifinalister</h3><div id="semiStats"></div></div><div class="card"><h3>Bäst på 1X2</h3><div id="outcomeStats"></div></div><div class="card"><h3>Bäst på exakta resultat</h3><div id="exactStats"></div></div><div class="card ai-card wide"><h3>Senaste läget</h3><div id="aiComment"></div></div></div></section>
+    <section id="data" class="view"><div class="card"><h2>Teknisk data</h2><pre id="dataPreview"></pre></div></section>
   </main>
 
-  <div id="toast"></div>
+  <div id="toast" class="toast"></div>
   <script src="app.js"></script>
 </body>
 </html>

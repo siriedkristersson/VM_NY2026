@@ -1,18 +1,18 @@
 /**
- * VM-tipset 2026 – V5 read-only backend.
+ * VM-tipset 2026 – stabil read-only backend.
  *
- * Google Sheet är källan för alla tips:
+ * Google Sheet är källan för tipsen:
  * - Players
  * - Predictions
  * - Bonus
- * - Results
  * - ActualBonus
  *
- * Backend skriver ENDAST:
- * - Results när du/appen hämtar resultat automatiskt
- * - Scoreboard som beräknad sammanställning
+ * Scriptet skriver ENDAST:
+ * - Results: uppdaterade matchresultat + lag som går vidare i spelträdet
+ * - Scoreboard: beräknad ställning
+ * - RefreshLog: logg för felsökning
  *
- * Backend skriver aldrig över Players, Predictions eller Bonus.
+ * Det skriver aldrig över Players, Predictions eller Bonus.
  */
 const SPREADSHEET_ID = '1q2TURZdn4NxhZWufIOq57MDaEBDULw6mAfa8ZMd4Pms';
 
@@ -22,22 +22,23 @@ const SHEETS = {
   Bonus: ['player_id','semi1','semi2','semi3','semi4','firstPlace','secondPlace','thirdPlace','firstYellowMinute'],
   Results: ['match_id','home','away','home_score','away_score','status','winner'],
   ActualBonus: ['semi1','semi2','semi3','semi4','firstPlace','secondPlace','thirdPlace','firstYellowMinute'],
-  Scoreboard: ['rank','player_id','name','match_points','bonus_points','exact_results','outcome_results','total_points','updated_at']
+  Scoreboard: ['rank','player_id','name','match_points','bonus_points','exact_results','outcome_results','total_points','updated_at'],
+  RefreshLog: ['timestamp','message']
 };
 
 const MATCHES = [
   ['53452545','2026-06-28 21:00','16-delsfinal','South Africa','Canada'],
   ['53452557','2026-06-29 19:00','16-delsfinal','Brazil','Japan'],
-  ['53452541','2026-06-29 22:30','16-delsfinal','Germany','Paraguay'],
-  ['53452547','2026-06-30 03:00','16-delsfinal','Netherlands','Morocco'],
+  ['53452547','2026-06-29 22:30','16-delsfinal','Germany','Paraguay'],
+  ['53452541','2026-06-30 03:00','16-delsfinal','Netherlands','Morocco'],
   ['53452561','2026-06-30 19:00','16-delsfinal','Ivory Coast','Norway'],
-  ['53452543','2026-06-30 23:00','16-delsfinal','France','Sweden'],
-  ['53452563','2026-07-01 03:00','16-delsfinal','Mexico','Ecuador'],
-  ['53452565','2026-07-01 18:00','16-delsfinal','England','DR Congo'],
-  ['53452555','2026-07-01 22:00','16-delsfinal','Belgium','Senegal'],
-  ['53452553','2026-07-02 02:00','16-delsfinal','United States','Bosnia and Herzegovina'],
-  ['53452551','2026-07-02 21:00','16-delsfinal','Spain','Austria'],
-  ['53452549','2026-07-03 01:00','16-delsfinal','Portugal','Croatia'],
+  ['53452563','2026-06-30 23:00','16-delsfinal','France','Sweden'],
+  ['53452543','2026-07-01 03:00','16-delsfinal','Mexico','Ecuador'],
+  ['53452553','2026-07-01 18:00','16-delsfinal','England','DR Congo'],
+  ['53452565','2026-07-01 22:00','16-delsfinal','Belgium','Senegal'],
+  ['53452555','2026-07-02 02:00','16-delsfinal','United States','Bosnia and Herzegovina'],
+  ['53452549','2026-07-02 21:00','16-delsfinal','Spain','Austria'],
+  ['53452551','2026-07-03 01:00','16-delsfinal','Portugal','Croatia'],
   ['53452505','2026-07-03 05:00','16-delsfinal','Switzerland','Algeria'],
   ['53452503','2026-07-03 20:00','16-delsfinal','Australia','Egypt'],
   ['53452569','2026-07-04 00:00','16-delsfinal','Argentina','Cape Verde'],
@@ -58,17 +59,17 @@ const MATCHES = [
   ['53452535','2026-07-15 21:00','Semifinal','Vinnare match 53452529','Vinnare match 53452531'],
   ['53452539','2026-07-18 23:00','Bronsmatch','Förlorare match 53452533','Förlorare match 53452535'],
   ['53452537','2026-07-19 21:00','Final','Vinnare match 53452533','Vinnare match 53452535']
-].map(function(row){ return {id:String(row[0]), date:row[1], group:row[2], home:row[3], away:row[4]}; });
+].map(function(r){ return {id:String(r[0]), date:r[1], group:r[2], home:r[3], away:r[4]}; });
 
 const TIP_MATCH_IDS = MATCHES.filter(function(m){ return m.group === '16-delsfinal'; }).map(function(m){ return m.id; });
 
 const BRACKET_SLOTS = {
-  '53452511': {home:{from:'53452545', type:'winner'}, away:{from:'53452547', type:'winner'}},
-  '53452509': {home:{from:'53452541', type:'winner'}, away:{from:'53452543', type:'winner'}},
+  '53452511': {home:{from:'53452545', type:'winner'}, away:{from:'53452541', type:'winner'}},
+  '53452509': {home:{from:'53452547', type:'winner'}, away:{from:'53452563', type:'winner'}},
   '53452517': {home:{from:'53452557', type:'winner'}, away:{from:'53452561', type:'winner'}},
-  '53452519': {home:{from:'53452563', type:'winner'}, away:{from:'53452565', type:'winner'}},
-  '53452513': {home:{from:'53452549', type:'winner'}, away:{from:'53452551', type:'winner'}},
-  '53452515': {home:{from:'53452553', type:'winner'}, away:{from:'53452555', type:'winner'}},
+  '53452519': {home:{from:'53452543', type:'winner'}, away:{from:'53452553', type:'winner'}},
+  '53452513': {home:{from:'53452551', type:'winner'}, away:{from:'53452549', type:'winner'}},
+  '53452515': {home:{from:'53452555', type:'winner'}, away:{from:'53452565', type:'winner'}},
   '53452521': {home:{from:'53452569', type:'winner'}, away:{from:'53452503', type:'winner'}},
   '53452523': {home:{from:'53452505', type:'winner'}, away:{from:'53452507', type:'winner'}},
   '53452525': {home:{from:'53452509', type:'winner'}, away:{from:'53452511', type:'winner'}},
@@ -81,236 +82,274 @@ const BRACKET_SLOTS = {
   '53452537': {home:{from:'53452533', type:'winner'}, away:{from:'53452535', type:'winner'}}
 };
 
-function doGet(){ return json_(getAll_()); }
+const TEAM_SV = {
+  'south africa':'Sydafrika','canada':'Kanada','brazil':'Brasilien','japan':'Japan','germany':'Tyskland','paraguay':'Paraguay','netherlands':'Nederländerna','morocco':'Marocko','ivory coast':'Elfenbenskusten','cote d ivoire':'Elfenbenskusten','norway':'Norge','france':'Frankrike','sweden':'Sverige','mexico':'Mexiko','ecuador':'Ecuador','england':'England','dr congo':'DR Kongo','congo dr':'DR Kongo','belgium':'Belgien','senegal':'Senegal','united states':'USA','usa':'USA','bosnia and herzegovina':'Bosnien och Hercegovina','bosnia-herzegovina':'Bosnien och Hercegovina','spain':'Spanien','austria':'Österrike','portugal':'Portugal','croatia':'Kroatien','switzerland':'Schweiz','algeria':'Algeriet','australia':'Australien','egypt':'Egypten','argentina':'Argentina','cape verde':'Kap Verde','cabo verde':'Kap Verde','colombia':'Colombia','ghana':'Ghana'
+};
+
+function doGet(){ return json(getAll()); }
 function doPost(e){
-  const body = e && e.postData ? JSON.parse(e.postData.contents || '{}') : {};
-  if (body.action === 'getAll') return json_(getAll_());
-  if (body.action === 'refreshResults') return json_(refreshResults_());
-  if (body.action === 'rebuildScoreboard') return json_(rebuildScoreboard_());
-  return json_({ok:false, error:'Unknown action: ' + body.action});
+  var body = e && e.postData ? JSON.parse(e.postData.contents || '{}') : {};
+  if(body.action === 'getAll') return json(getAll());
+  if(body.action === 'refreshResults') return json(refreshResults());
+  if(body.action === 'installAutoRefreshTrigger') return json(installAutoRefreshTrigger());
+  return json({ok:false,error:'Unknown action: ' + body.action});
 }
-
-function json_(obj){ return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
-function ss_(){ return SpreadsheetApp.openById(SPREADSHEET_ID); }
-
-function getSheet_(name, headers, create){
-  const spreadsheet = ss_();
-  let s = spreadsheet.getSheetByName(name);
-  if (!s && create) s = spreadsheet.insertSheet(name);
-  if (!s) return null;
-  if (s.getLastRow() === 0 && headers && create) s.appendRow(headers);
-  if (headers && create) {
-    const current = s.getRange(1,1,1,Math.max(s.getLastColumn(),1)).getValues()[0].map(String);
-    const missing = headers.filter(function(h){ return current.indexOf(h) === -1; });
-    if (missing.length) s.getRange(1,current.length + 1,1,missing.length).setValues([missing]);
-  }
+function json(obj){ return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
+function ss(){ return SpreadsheetApp.openById(SPREADSHEET_ID); }
+function getSheet(name, headers){
+  var s = ss().getSheetByName(name) || ss().insertSheet(name);
+  if(s.getLastRow() === 0) s.appendRow(headers);
+  var current = s.getRange(1,1,1,Math.max(s.getLastColumn(),1)).getValues()[0].map(String);
+  var missing = headers.filter(function(h){ return current.indexOf(h) === -1; });
+  if(missing.length) s.getRange(1,current.length+1,1,missing.length).setValues([missing]);
   return s;
 }
-
-function readRows_(name, headers){
-  const s = getSheet_(name, headers, false);
-  if (!s || s.getLastRow() < 2) return [];
-  const values = s.getDataRange().getValues();
-  const header = values.shift().map(String);
-  return values.filter(function(row){ return row.some(function(v){ return v !== ''; }); }).map(function(row){
-    const obj = {};
-    header.forEach(function(h, i){ obj[h] = row[i]; });
+function readRows(name, headers){
+  var s = getSheet(name, headers);
+  if(s.getLastRow() < 2) return [];
+  var values = s.getDataRange().getValues();
+  var h = values.shift().map(String);
+  return values.filter(function(r){ return r.some(function(v){ return v !== ''; }); }).map(function(r){
+    var obj = {};
+    h.forEach(function(key,i){ obj[key] = r[i]; });
     return obj;
   });
 }
-
-function getAll_(){
-  const data = readData_();
-  const scoreboard = calculateScoreboard_(data);
-  writeScoreboard_(scoreboard);
-  return Object.assign({ok:true, matches:MATCHES, scoreboard:scoreboard, stats:buildStats_(data, scoreboard), comment:buildComment_(data, scoreboard)}, data);
-}
-
-function readData_(){
-  const players = readRows_('Players', SHEETS.Players).map(function(p){ return {player_id:key_(p.player_id), id:key_(p.player_id), name:p.name || p.player_id || '', email:p.email || '', created_at:p.created_at || ''}; });
-  const predictions = readRows_('Predictions', SHEETS.Predictions).map(function(p){ return {player_id:key_(p.player_id), match_id:internalMatchIdFromValue_(p.match_id), pred_outcome:String(p.pred_outcome || ''), pred_home:p.pred_home, pred_away:p.pred_away, submitted_at:p.submitted_at || ''}; });
-  const bonus = readRows_('Bonus', SHEETS.Bonus).map(function(b){ return {player_id:key_(b.player_id), semi1:b.semi1 || '', semi2:b.semi2 || '', semi3:b.semi3 || '', semi4:b.semi4 || '', firstPlace:b.firstPlace || '', secondPlace:b.secondPlace || '', thirdPlace:b.thirdPlace || '', firstYellowMinute:b.firstYellowMinute || ''}; });
-  const results = {};
-  readRows_('Results', SHEETS.Results).forEach(function(r){
-    const id = internalMatchIdFromResultRow_(r);
-    if (!id) return;
-    results[id] = {match_id:id, home:r.home || '', away:r.away || '', home_score:r.home_score, away_score:r.away_score, status:normalizeStatus_(r.status), winner:r.winner || ''};
-  });
-  const actual = readRows_('ActualBonus', SHEETS.ActualBonus)[0] || {};
-  return {players:players, predictions:predictions, bonus:bonus, results:results, actualBonus:{semi1:actual.semi1 || '', semi2:actual.semi2 || '', semi3:actual.semi3 || '', semi4:actual.semi4 || '', firstPlace:actual.firstPlace || '', secondPlace:actual.secondPlace || '', thirdPlace:actual.thirdPlace || '', firstYellowMinute:actual.firstYellowMinute || ''}};
-}
-
-function rebuildScoreboard_(){
-  const data = readData_();
-  const scoreboard = calculateScoreboard_(data);
-  writeScoreboard_(scoreboard);
-  return {ok:true, scoreboard:scoreboard};
-}
-
-function refreshResults_(){
-  const fetched = fetchEspnResults_();
-  const sheet = getSheet_('Results', SHEETS.Results, true);
-  const values = sheet.getDataRange().getValues();
-  const headers = values[0].map(String);
-  const idCol = headers.indexOf('match_id');
-  const rowById = {};
-  for (let i=1; i<values.length; i++) {
-    const rowObj = {};
-    headers.forEach(function(h, idx){ rowObj[h] = values[i][idx]; });
-    const internalId = internalMatchIdFromResultRow_(rowObj);
-    if (internalId) rowById[internalId] = i + 1;
-  }
-  let updated = 0;
-  fetched.forEach(function(x){
-    const id = internalMatchIdFromExternal_(x);
-    if (!id) return;
-    const row = [id, x.home || '', x.away || '', x.home_score ?? '', x.away_score ?? '', normalizeStatus_(x.status), x.winner || ''];
-    if (rowById[id]) sheet.getRange(rowById[id],1,1,SHEETS.Results.length).setValues([row]);
-    else sheet.appendRow(row);
-    updated++;
-  });
-  const data = readData_();
-  const scoreboard = calculateScoreboard_(data);
-  writeScoreboard_(scoreboard);
-  return {ok:true, updated:updated, fetched:fetched.length, scoreboard:scoreboard};
-}
-
-function writeScoreboard_(scoreboard){
-  const s = getSheet_('Scoreboard', SHEETS.Scoreboard, true);
+function writeRows(name, headers, rows){
+  var s = getSheet(name, headers);
   s.clearContents();
-  s.appendRow(SHEETS.Scoreboard);
-  if (!scoreboard.length) return;
-  const now = new Date();
-  const rows = scoreboard.map(function(r){ return [r.rank, r.player_id, r.name, r.match_points, r.bonus_points, r.exact_results, r.outcome_results, r.total_points, now]; });
-  s.getRange(2,1,rows.length,SHEETS.Scoreboard.length).setValues(rows);
+  s.getRange(1,1,1,headers.length).setValues([headers]);
+  if(rows.length) s.getRange(2,1,rows.length,headers.length).setValues(rows);
+}
+function appendLog(msg){
+  try{
+    var s=getSheet('RefreshLog', SHEETS.RefreshLog);
+    s.appendRow([new Date(), msg]);
+    var maxRows=200;
+    if(s.getLastRow()>maxRows+1) s.deleteRows(2, s.getLastRow()-maxRows-1);
+  }catch(e){}
 }
 
-function calculateScoreboard_(data){
-  const results = data.results || {};
-  const actual = data.actualBonus || {};
-  const rows = (data.players || []).map(function(player){
-    const playerId = key_(player.player_id || player.id);
-    let matchPts = 0, exact = 0, outcomeRight = 0;
-    (data.predictions || []).filter(function(p){ return key_(p.player_id) === playerId && TIP_MATCH_IDS.indexOf(String(p.match_id)) !== -1; }).forEach(function(p){
-      const r = results[String(p.match_id)];
-      const pts = pointsForPrediction_(p, r);
-      matchPts += pts;
-      if (pts === 2) exact++;
-      if (pts === 1) outcomeRight++;
-    });
-    let bonusPts = 0;
-    const b = (data.bonus || []).find(function(x){ return key_(x.player_id) === playerId; });
-    if (b) {
-      const actualSemis = [actual.semi1, actual.semi2, actual.semi3, actual.semi4].map(norm_).filter(Boolean);
-      const guessedSemis = unique_([b.semi1, b.semi2, b.semi3, b.semi4].map(norm_).filter(Boolean));
-      bonusPts += guessedSemis.filter(function(team){ return actualSemis.indexOf(team) !== -1; }).length * 2;
-      if (norm_(b.thirdPlace) && norm_(b.thirdPlace) === norm_(actual.thirdPlace)) bonusPts += 3;
-      if (norm_(b.secondPlace) && norm_(b.secondPlace) === norm_(actual.secondPlace)) bonusPts += 4;
-      if (norm_(b.firstPlace) && norm_(b.firstPlace) === norm_(actual.firstPlace)) bonusPts += 5;
-    }
-    return {player_id:playerId, name:player.name || player.player_id || playerId, match_points:matchPts, bonus_points:bonusPts, exact_results:exact, outcome_results:outcomeRight, total_points:matchPts + bonusPts};
-  }).sort(function(a,b){ return b.total_points - a.total_points || b.exact_results - a.exact_results || b.outcome_results - a.outcome_results || String(a.name).localeCompare(String(b.name)); });
-  rows.forEach(function(r,i){ r.rank = i + 1; });
-  return rows;
-}
-
-function pointsForPrediction_(p, r){
-  if (!p || !r || normalizeStatus_(r.status) !== 'Complete') return 0;
-  if (p.pred_home === '' || p.pred_away === '' || p.pred_home == null || p.pred_away == null) return 0;
-  const exact = Number(p.pred_home) === Number(r.home_score) && Number(p.pred_away) === Number(r.away_score);
-  if (exact) return 2;
-  const po = String(p.pred_outcome || calcOutcome_(p.pred_home, p.pred_away) || '').toUpperCase();
-  return po && po === calcOutcome_(r.home_score, r.away_score) ? 1 : 0;
-}
-function calcOutcome_(home, away){ const h = Number(home), a = Number(away); if (h > a) return '1'; if (h < a) return '2'; if (h === a) return 'X'; return ''; }
-function normalizeStatus_(s){ const v = String(s || '').toLowerCase(); return (v === 'complete' || v.indexOf('final') !== -1 || v.indexOf('finished') !== -1 || v.indexOf('spelad') !== -1 || v.indexOf('status_final') !== -1) ? 'Complete' : String(s || 'Scheduled'); }
-function key_(v){ return String(v || '').trim().toLowerCase(); }
-function norm_(v){ return String(v || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
-function alias_(v){ const n = norm_(v); const map = {'cote d ivoire':'ivory coast','ivory coast':'ivory coast','congo dr':'dr congo','dr congo':'dr congo','usa':'united states','u s':'united states','united states':'united states','cape verde islands':'cape verde','cabo verde':'cape verde','bosnia herzegovina':'bosnia and herzegovina'}; return map[n] || n; }
-function unique_(arr){ return arr.filter(function(v,i,a){ return v && a.indexOf(v) === i; }); }
-
-function svTeam_(v){
-  const n = norm_(v);
-  const map = {
-    'south africa':'Sydafrika','canada':'Kanada','brazil':'Brasilien','japan':'Japan','germany':'Tyskland','paraguay':'Paraguay','netherlands':'Nederländerna','morocco':'Marocko','ivory coast':'Elfenbenskusten','norway':'Norge','france':'Frankrike','sweden':'Sverige','mexico':'Mexiko','ecuador':'Ecuador','england':'England','dr congo':'DR Kongo','congo dr':'DR Kongo','belgium':'Belgien','senegal':'Senegal','united states':'USA','usa':'USA','bosnia and herzegovina':'Bosnien och Hercegovina','spain':'Spanien','austria':'Österrike','portugal':'Portugal','croatia':'Kroatien','switzerland':'Schweiz','algeria':'Algeriet','australia':'Australien','egypt':'Egypten','argentina':'Argentina','cape verde':'Kap Verde','cabo verde':'Kap Verde','colombia':'Colombia','ghana':'Ghana'
+function norm(v){ return String(v||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
+function alias(v){
+  var n=norm(v);
+  var map={
+    'cote d ivoire':'ivory coast','ivory coast':'ivory coast','dr congo':'dr congo','congo dr':'dr congo','d r congo':'dr congo','usa':'united states','us':'united states','u s a':'united states','bosnia herzegovina':'bosnia and herzegovina','bosnia and herzegovina':'bosnia and herzegovina','cape verde':'cape verde','cabo verde':'cape verde','south africa':'south africa'
   };
-  return map[n] || String(v || '');
+  return map[n] || n;
+}
+function svName(v){ return TEAM_SV[alias(v)] || TEAM_SV[norm(v)] || String(v||'').trim(); }
+function calcOutcome(h,a){ h=Number(h); a=Number(a); if(h>a) return '1'; if(h<a) return '2'; if(h===a) return 'X'; return ''; }
+function isCompleteStatus(status){ return String(status||'').toLowerCase() === 'complete' || String(status||'').toLowerCase().indexOf('final')>=0; }
+function emptyResultForMatch(m){ return {match_id:m.id, home:m.home, away:m.away, home_score:0, away_score:0, status:'STATUS_SCHEDULED', winner:''}; }
+function resultMapFromSheet(){
+  var map={};
+  readRows('Results', SHEETS.Results).forEach(function(r){ if(r.match_id !== '') map[String(r.match_id)] = r; });
+  return map;
+}
+function getWinnerLoser(matchId, results){
+  var r=results[String(matchId)];
+  if(!r || !isCompleteStatus(r.status)) return null;
+  var h=Number(r.home_score), a=Number(r.away_score);
+  var home=String(r.home||'').trim(), away=String(r.away||'').trim();
+  var winner=String(r.winner||'').trim();
+  if(!winner && h!==a) winner = h>a ? home : away;
+  var loser = '';
+  if(winner){
+    if(alias(winner)===alias(home)) loser=away;
+    else if(alias(winner)===alias(away)) loser=home;
+  }
+  return {winner:winner, loser:loser};
+}
+function resolvePlaceholder(slot, results){
+  if(!slot) return '';
+  var wl=getWinnerLoser(slot.from, results);
+  if(wl && wl[slot.type]) return wl[slot.type];
+  var source=results[String(slot.from)] || emptyResultForMatch(MATCHES.filter(function(m){return m.id===String(slot.from);})[0]);
+  if(!source) return slot.type==='loser' ? 'Förlorare match ' + slot.from : 'Vinnare match ' + slot.from;
+  return (slot.type==='loser' ? 'Förlorare: ' : 'Vinnare: ') + source.home + '/' + source.away;
+}
+function normalizeResults(){
+  var existing=resultMapFromSheet();
+  var out={};
+  MATCHES.forEach(function(m){
+    var old=existing[m.id] || {};
+    out[m.id] = {
+      match_id:m.id,
+      home: old.home || m.home,
+      away: old.away || m.away,
+      home_score: old.home_score !== '' && old.home_score !== undefined ? old.home_score : 0,
+      away_score: old.away_score !== '' && old.away_score !== undefined ? old.away_score : 0,
+      status: old.status || 'STATUS_SCHEDULED',
+      winner: old.winner || ''
+    };
+  });
+  Object.keys(BRACKET_SLOTS).forEach(function(id){
+    var slots=BRACKET_SLOTS[id];
+    out[id].home = isCompleteStatus(out[id].status) ? out[id].home : resolvePlaceholder(slots.home,out);
+    out[id].away = isCompleteStatus(out[id].status) ? out[id].away : resolvePlaceholder(slots.away,out);
+  });
+  writeResultsMap(out);
+  return out;
+}
+function writeResultsMap(map){
+  var rows=MATCHES.map(function(m){
+    var r=map[m.id] || emptyResultForMatch(m);
+    return [m.id, r.home || '', r.away || '', r.home_score, r.away_score, r.status || 'STATUS_SCHEDULED', r.winner || ''];
+  });
+  writeRows('Results', SHEETS.Results, rows);
 }
 
-function internalMatchIdFromValue_(value){
-  const id = String(value || '').trim();
-  if (MATCHES.some(function(m){ return m.id === id; })) return id;
-  return id;
-}
-function internalMatchIdFromResultRow_(r){
-  const raw = String(r.match_id || '').trim();
-  if (MATCHES.some(function(m){ return m.id === raw; })) return raw;
-  return internalMatchIdFromExternal_({id:raw, home:r.home, away:r.away, date:r.date});
-}
-function internalMatchIdFromExternal_(x){
-  const home = alias_(x.home || x.homeTeam || x.home_name || '');
-  const away = alias_(x.away || x.awayTeam || x.away_name || '');
-  const date = String(x.date || x.date_short || x.competition_date || '').slice(0,10);
-  let candidates = MATCHES.filter(function(m){ return alias_(m.home) === home && alias_(m.away) === away; });
-  if (!candidates.length) candidates = MATCHES.filter(function(m){ return alias_(m.home) === away && alias_(m.away) === home; });
-  if (date && candidates.length > 1) candidates = candidates.filter(function(m){ return m.date.slice(0,10) === date; });
+function matchInternalId(external){
+  var rawId=String(external.id||external.match_id||external.game_id||'');
+  if(MATCHES.some(function(m){return m.id===rawId;})) return rawId;
+  var home=alias(external.home||''), away=alias(external.away||'');
+  var date=String(external.date||'').slice(0,10);
+  var candidates=MATCHES.filter(function(m){ return alias(m.home)===home && alias(m.away)===away; });
+  if(!candidates.length) candidates=MATCHES.filter(function(m){ return alias(m.home)===away && alias(m.away)===home; });
+  if(date && candidates.length>1) candidates=candidates.filter(function(m){ return String(m.date).slice(0,10)===date; });
   return candidates[0] ? candidates[0].id : '';
 }
-
-function buildStats_(data, scoreboard){
-  return {
-    champion: countValues_((data.bonus || []).map(function(b){ return b.firstPlace; })),
-    semifinalists: countValues_((data.bonus || []).flatMap(function(b){ return [b.semi1,b.semi2,b.semi3,b.semi4]; })),
-    best1x2: scoreboard.map(function(r){ return {name:r.name, value:r.exact_results + r.outcome_results}; }).sort(function(a,b){ return b.value - a.value; }).slice(0,10),
-    bestExact: scoreboard.map(function(r){ return {name:r.name, value:r.exact_results}; }).sort(function(a,b){ return b.value - a.value; }).slice(0,10)
-  };
+function refreshResults(){
+  var results=normalizeResults();
+  var fetched=fetchEspnResults_();
+  var matched=0, unmatched=[];
+  fetched.forEach(function(x){
+    var id=matchInternalId(x);
+    if(!id){ unmatched.push((x.home||'?')+' - '+(x.away||'?')+' '+(x.date||'')); return; }
+    var status = isCompleteStatus(x.status) ? 'Complete' : (x.status || 'STATUS_SCHEDULED');
+    var winner = x.winner || '';
+    if(!winner && isCompleteStatus(status) && Number(x.home_score)!==Number(x.away_score)) winner = Number(x.home_score)>Number(x.away_score) ? x.home : x.away;
+    results[id] = {
+      match_id:id,
+      home:x.home || results[id].home,
+      away:x.away || results[id].away,
+      home_score:x.home_score !== undefined && x.home_score !== null ? x.home_score : results[id].home_score,
+      away_score:x.away_score !== undefined && x.away_score !== null ? x.away_score : results[id].away_score,
+      status:status,
+      winner:winner || results[id].winner || ''
+    };
+    matched++;
+  });
+  writeResultsMap(results);
+  normalizeResults();
+  var data=buildData();
+  writeScoreboard(data);
+  appendLog('ESPN fetched: '+fetched.length+'. Matched: '+matched+'. Unmatched: '+unmatched.length+(unmatched.length?'. '+unmatched.join(' | '):''));
+  return {ok:true, fetched:fetched.length, matched:matched, unmatched:unmatched};
 }
-function countValues_(values){
-  const counts = {};
-  values.map(function(v){ return String(v || '').trim(); }).filter(Boolean).forEach(function(v){ counts[v] = (counts[v] || 0) + 1; });
-  return Object.keys(counts).map(function(name){ return {name:name, value:counts[name]}; }).sort(function(a,b){ return b.value - a.value || a.name.localeCompare(b.name); });
-}
-function buildComment_(data, scoreboard){
-  if (!scoreboard.length) return 'Inga deltagare är inlästa ännu.';
-  const completeIds = Object.keys(data.results || {}).filter(function(id){ return normalizeStatus_(data.results[id].status) === 'Complete'; });
-  if (!completeIds.length) return scoreboard[0].name + ' toppar inför slutspelet. ' + (data.players || []).length + ' deltagare är inlästa.';
-  const last = MATCHES.filter(function(m){ return completeIds.indexOf(m.id) !== -1; }).sort(function(a,b){ return new Date(b.date.replace(' ','T')) - new Date(a.date.replace(' ','T')); })[0];
-  const r = data.results[last.id];
-  const correct = (data.players || []).filter(function(p){
-    const pred = (data.predictions || []).find(function(x){ return key_(x.player_id) === key_(p.player_id || p.id) && String(x.match_id) === last.id; });
-    return pointsForPrediction_(pred, r) > 0;
-  }).length;
-  return svTeam_(last.home) + ' – ' + svTeam_(last.away) + ' slutade ' + r.home_score + '–' + r.away_score + '. ' + correct + ' av ' + (data.players || []).length + ' fick poäng. ' + scoreboard[0].name + ' leder med ' + scoreboard[0].total_points + ' poäng.';
+function scheduledRefresh(){ return refreshResults(); }
+function testRefreshNow(){ return refreshResults(); }
+function installAutoRefreshTrigger(){
+  ScriptApp.getProjectTriggers().forEach(function(t){ if(t.getHandlerFunction()==='scheduledRefresh') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('scheduledRefresh').timeBased().everyMinutes(15).create();
+  return {ok:true, message:'Automatisk uppdatering installerad var 15:e minut.'};
 }
 
 function fetchEspnResults_(){
-  const dates = ['20260628','20260629','20260630','20260701','20260702','20260703','20260704','20260705','20260706','20260707','20260709','20260710','20260711','20260712','20260714','20260715','20260718','20260719'];
-  const out = [];
+  var dates=['20260628','20260629','20260630','20260701','20260702','20260703','20260704','20260705','20260706','20260707','20260709','20260710','20260711','20260712','20260714','20260715','20260718','20260719'];
+  var out=[];
   dates.forEach(function(d){
-    const url = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=' + d;
-    try {
-      const res = UrlFetchApp.fetch(url, {muteHttpExceptions:true});
-      if (res.getResponseCode() >= 400) return;
-      const data = JSON.parse(res.getContentText());
-      (data.events || []).forEach(function(ev){
-        const comp = (ev.competitions || [])[0]; if (!comp) return;
-        const competitors = comp.competitors || [];
-        const home = competitors.find(function(c){ return c.homeAway === 'home'; });
-        const away = competitors.find(function(c){ return c.homeAway === 'away'; });
-        if (!home || !away) return;
-        const winner = competitors.find(function(c){ return c.winner === true; });
+    var url='https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates='+d;
+    try{
+      var res=UrlFetchApp.fetch(url,{muteHttpExceptions:true});
+      if(res.getResponseCode()>=400) return;
+      var data=JSON.parse(res.getContentText());
+      (data.events||[]).forEach(function(ev){
+        var comp=(ev.competitions||[])[0]; if(!comp) return;
+        var home=(comp.competitors||[]).filter(function(c){return c.homeAway==='home';})[0];
+        var away=(comp.competitors||[]).filter(function(c){return c.homeAway==='away';})[0];
+        if(!home || !away) return;
+        var winner=(comp.competitors||[]).filter(function(c){return c.winner===true;})[0];
         out.push({
-          id:String(ev.id),
-          date: ev.date ? ev.date.slice(0,10) : '',
+          id:String(ev.id), date: ev.date ? ev.date.slice(0,10) : '',
           home: home.team ? (home.team.displayName || home.team.shortDisplayName || '') : '',
           away: away.team ? (away.team.displayName || away.team.shortDisplayName || '') : '',
-          home_score: home.score,
-          away_score: away.score,
-          status: ev.status && ev.status.type && ev.status.type.completed ? 'Complete' : (ev.status && ev.status.type ? ev.status.type.name : 'Scheduled'),
+          home_score: home.score !== undefined ? home.score : '',
+          away_score: away.score !== undefined ? away.score : '',
+          status: ev.status && ev.status.type && ev.status.type.completed ? 'Complete' : (ev.status && ev.status.type ? ev.status.type.name : 'STATUS_SCHEDULED'),
           winner: winner && winner.team ? (winner.team.displayName || winner.team.shortDisplayName || '') : ''
         });
       });
-    } catch(err) {}
+    } catch(err){ appendLog('ESPN error '+d+': '+err.message); }
   });
   return out;
+}
+
+function pointsForPrediction(p,r){
+  if(!p || !r || !isCompleteStatus(r.status)) return 0;
+  var exact = Number(p.pred_home)===Number(r.home_score) && Number(p.pred_away)===Number(r.away_score);
+  if(exact) return 2;
+  var po=String(p.pred_outcome || calcOutcome(p.pred_home,p.pred_away)).toUpperCase();
+  return po && po===calcOutcome(r.home_score,r.away_score) ? 1 : 0;
+}
+function scorePlayer(player, data){
+  var matchPts=0, bonusPts=0, exact=0, outcomeRight=0;
+  data.predictions.filter(function(p){ return String(p.player_id)===String(player.player_id) && TIP_MATCH_IDS.indexOf(String(p.match_id))!==-1; }).forEach(function(p){
+    var r=data.results[String(p.match_id)];
+    var pts=pointsForPrediction(p,r);
+    matchPts += pts;
+    if(pts===2) exact++;
+    if(pts===1) outcomeRight++;
+  });
+  var b=data.bonus.filter(function(x){ return String(x.player_id)===String(player.player_id); })[0];
+  var a=data.actualBonus || {};
+  if(b){
+    var actualSemis=[a.semi1,a.semi2,a.semi3,a.semi4].map(alias).filter(Boolean);
+    var tipSemis=[b.semi1,b.semi2,b.semi3,b.semi4].map(alias).filter(Boolean);
+    tipSemis = tipSemis.filter(function(v,i,self){ return self.indexOf(v)===i; });
+    bonusPts += tipSemis.filter(function(t){ return actualSemis.indexOf(t)!==-1; }).length * 2;
+    if(alias(b.thirdPlace) && alias(b.thirdPlace)===alias(a.thirdPlace)) bonusPts += 3;
+    if(alias(b.secondPlace) && alias(b.secondPlace)===alias(a.secondPlace)) bonusPts += 4;
+    if(alias(b.firstPlace) && alias(b.firstPlace)===alias(a.firstPlace)) bonusPts += 5;
+  }
+  return {matchPts:matchPts, bonusPts:bonusPts, exact:exact, outcomeRight:outcomeRight, total:matchPts+bonusPts};
+}
+function writeScoreboard(data){
+  var rows=data.players.map(function(p){ var s=scorePlayer(p,data); return {p:p,s:s}; })
+    .sort(function(a,b){ return b.s.total-a.s.total || b.s.exact-a.s.exact || b.s.outcomeRight-a.s.outcomeRight || String(a.p.name).localeCompare(String(b.p.name)); })
+    .map(function(x,i){ return [i+1,x.p.player_id,x.p.name,x.s.matchPts,x.s.bonusPts,x.s.exact,x.s.outcomeRight,x.s.total,new Date()]; });
+  writeRows('Scoreboard', SHEETS.Scoreboard, rows);
+  return rows;
+}
+function buildStats(data, scoreboard){
+  function count(values){
+    var m={}; values.filter(Boolean).forEach(function(v){ var key=svName(v); m[key]=(m[key]||0)+1; });
+    return Object.keys(m).map(function(k){ return {name:k,value:m[k]}; }).sort(function(a,b){ return b.value-a.value || a.name.localeCompare(b.name); });
+  }
+  var champs=data.bonus.map(function(b){ return b.firstPlace; });
+  var semis=[]; data.bonus.forEach(function(b){ semis.push(b.semi1,b.semi2,b.semi3,b.semi4); });
+  return {
+    champion: count(champs),
+    semifinalists: count(semis),
+    best1x2: scoreboard.map(function(r){ return {name:r.name,value:Number(r.outcome_results||0)+Number(r.exact_results||0)}; }).sort(function(a,b){return b.value-a.value;}),
+    bestExact: scoreboard.map(function(r){ return {name:r.name,value:Number(r.exact_results||0)}; }).sort(function(a,b){return b.value-a.value;})
+  };
+}
+function latestComment(data, scoreboard){
+  var completed=MATCHES.map(function(m){ return data.results[m.id]; }).filter(function(r){ return r && isCompleteStatus(r.status); });
+  var leader=scoreboard[0];
+  if(!completed.length) return 'Inga matcher är färdigspelade ännu. Ställningen uppdateras automatiskt när resultaten kommer in.';
+  var last=completed[completed.length-1];
+  var ptsPlayers=data.players.filter(function(p){
+    return data.predictions.some(function(pr){ return String(pr.player_id)===String(p.player_id) && String(pr.match_id)===String(last.match_id) && pointsForPrediction(pr,last)>0; });
+  }).length;
+  var text = svName(last.home) + ' – ' + svName(last.away) + ' slutade ' + last.home_score + '–' + last.away_score + '. ' + ptsPlayers + ' av ' + data.players.length + ' fick poäng.';
+  if(leader) text += ' ' + leader.name + ' leder med ' + leader.total_points + ' poäng.';
+  return text;
+}
+function buildData(){
+  var results=normalizeResults();
+  var players=readRows('Players', SHEETS.Players).map(function(p){ return {player_id:String(p.player_id||'').trim(), id:String(p.player_id||'').trim(), name:p.name||p.player_id||'', email:p.email||'', created_at:p.created_at||''}; }).filter(function(p){return p.player_id;});
+  var predictions=readRows('Predictions', SHEETS.Predictions).map(function(p){ return {player_id:String(p.player_id||'').trim(), match_id:String(p.match_id||'').trim(), pred_outcome:String(p.pred_outcome||''), pred_home:p.pred_home, pred_away:p.pred_away, submitted_at:p.submitted_at||''}; });
+  var bonus=readRows('Bonus', SHEETS.Bonus).map(function(b){ return {player_id:String(b.player_id||'').trim(), semi1:b.semi1||'', semi2:b.semi2||'', semi3:b.semi3||'', semi4:b.semi4||'', firstPlace:b.firstPlace||'', secondPlace:b.secondPlace||'', thirdPlace:b.thirdPlace||'', firstYellowMinute:b.firstYellowMinute||''}; });
+  var a=readRows('ActualBonus', SHEETS.ActualBonus)[0] || {};
+  var actualBonus={semi1:a.semi1||'', semi2:a.semi2||'', semi3:a.semi3||'', semi4:a.semi4||'', firstPlace:a.firstPlace||'', secondPlace:a.secondPlace||'', thirdPlace:a.thirdPlace||'', firstYellowMinute:a.firstYellowMinute||''};
+  return {players:players,predictions:predictions,bonus:bonus,results:results,actualBonus:actualBonus};
+}
+function getAll(){
+  var data=buildData();
+  var sbRows=writeScoreboard(data);
+  var scoreboard=readRows('Scoreboard', SHEETS.Scoreboard);
+  return {ok:true, players:data.players, predictions:data.predictions, bonus:data.bonus, results:data.results, actualBonus:data.actualBonus, scoreboard:scoreboard, matches:MATCHES, stats:buildStats(data,scoreboard), comment:latestComment(data,scoreboard), refreshed_at:new Date()};
 }
