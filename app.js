@@ -21,7 +21,7 @@ let state = {
 };
 
 const FLAGS = {
-  'south africa':'🇿🇦','canada':'🇨🇦','brazil':'🇧🇷','japan':'🇯🇵','germany':'🇩🇪','paraguay':'🇵🇾','netherlands':'🇳🇱','morocco':'🇲🇦','ivory coast':'🇨🇮','norway':'🇳🇴','france':'🇫🇷','sweden':'🇸🇪','mexico':'🇲🇽','ecuador':'🇪🇨','england':'🏴','dr congo':'🇨🇩','belgium':'🇧🇪','senegal':'🇸🇳','united states':'🇺🇸','bosnia and herzegovina':'🇧🇦','spain':'🇪🇸','austria':'🇦🇹','portugal':'🇵🇹','croatia':'🇭🇷','switzerland':'🇨🇭','algeria':'🇩🇿','australia':'🇦🇺','egypt':'🇪🇬','argentina':'🇦🇷','cape verde':'🇨🇻','colombia':'🇨🇴','ghana':'🇬🇭'
+  'south africa':'🇿🇦','canada':'🇨🇦','brazil':'🇧🇷','japan':'🇯🇵','germany':'🇩🇪','paraguay':'🇵🇾','netherlands':'🇳🇱','morocco':'🇲🇦','ivory coast':'🇨🇮','norway':'🇳🇴','france':'🇫🇷','sweden':'🇸🇪','mexico':'🇲🇽','ecuador':'🇪🇨','england':'🇬🇧','dr congo':'🇨🇩','belgium':'🇧🇪','senegal':'🇸🇳','united states':'🇺🇸','bosnia and herzegovina':'🇧🇦','spain':'🇪🇸','austria':'🇦🇹','portugal':'🇵🇹','croatia':'🇭🇷','switzerland':'🇨🇭','algeria':'🇩🇿','australia':'🇦🇺','egypt':'🇪🇬','argentina':'🇦🇷','cape verde':'🇨🇻','colombia':'🇨🇴','ghana':'🇬🇭'
 };
 
 const BRACKET_SLOTS = {
@@ -87,7 +87,7 @@ const TEAM_FLAGS = {
   'japan':'🇯🇵','germany':'🇩🇪','tyskland':'🇩🇪','paraguay':'🇵🇾','netherlands':'🇳🇱','nederlanderna':'🇳🇱',
   'morocco':'🇲🇦','marocko':'🇲🇦','ivory coast':'🇨🇮','cote d ivoire':'🇨🇮','elfenbenskusten':'🇨🇮',
   'norway':'🇳🇴','norge':'🇳🇴','france':'🇫🇷','frankrike':'🇫🇷','sweden':'🇸🇪','sverige':'🇸🇪',
-  'mexico':'🇲🇽','mexiko':'🇲🇽','ecuador':'🇪🇨','england':'🏴','dr congo':'🇨🇩','congo dr':'🇨🇩','kongo dr':'🇨🇩',
+  'mexico':'🇲🇽','mexiko':'🇲🇽','ecuador':'🇪🇨','england':'🇬🇧','dr congo':'🇨🇩','congo dr':'🇨🇩','kongo dr':'🇨🇩',
   'belgium':'🇧🇪','belgien':'🇧🇪','senegal':'🇸🇳','united states':'🇺🇸','usa':'🇺🇸',
   'bosnia and herzegovina':'🇧🇦','bosnia-herzegovina':'🇧🇦','bosnien hercegovina':'🇧🇦',
   'spain':'🇪🇸','spanien':'🇪🇸','austria':'🇦🇹','osterrike':'🇦🇹','portugal':'🇵🇹',
