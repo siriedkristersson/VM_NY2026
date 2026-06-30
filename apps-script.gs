@@ -20,7 +20,7 @@ const SHEETS = {
   Players: ['player_id','name','email','created_at'],
   Predictions: ['player_id','match_id','pred_outcome','pred_home','pred_away','submitted_at'],
   Bonus: ['player_id','semi1','semi2','semi3','semi4','firstPlace','secondPlace','thirdPlace','firstYellowMinute'],
-  Results: ['match_id','home','away','home_score','away_score','status','winner'],
+  Results: ['match_id','home','away','home_score','away_score','status','winner','home_score_90','away_score_90'],
   ActualBonus: ['semi1','semi2','semi3','semi4','firstPlace','secondPlace','thirdPlace','firstYellowMinute'],
   Scoreboard: ['rank','player_id','name','match_points','bonus_points','exact_results','outcome_results','total_points','updated_at'],
   RefreshLog: ['timestamp','message']
@@ -141,7 +141,7 @@ function alias(v){
 function svName(v){ return TEAM_SV[alias(v)] || TEAM_SV[norm(v)] || String(v||'').trim(); }
 function calcOutcome(h,a){ h=Number(h); a=Number(a); if(h>a) return '1'; if(h<a) return '2'; if(h===a) return 'X'; return ''; }
 function isCompleteStatus(status){ return String(status||'').toLowerCase() === 'complete' || String(status||'').toLowerCase().indexOf('final')>=0; }
-function emptyResultForMatch(m){ return {match_id:m.id, home:m.home, away:m.away, home_score:0, away_score:0, status:'STATUS_SCHEDULED', winner:''}; }
+function emptyResultForMatch(m){ return {match_id:m.id, home:m.home, away:m.away, home_score:0, away_score:0, status:'STATUS_SCHEDULED', winner:'', home_score_90:'', away_score_90:''}; }
 function resultMapFromSheet(){
   var map={};
   readRows('Results', SHEETS.Results).forEach(function(r){ if(r.match_id !== '') map[String(r.match_id)] = r; });
@@ -181,7 +181,9 @@ function normalizeResults(){
       home_score: old.home_score !== '' && old.home_score !== undefined ? old.home_score : 0,
       away_score: old.away_score !== '' && old.away_score !== undefined ? old.away_score : 0,
       status: old.status || 'STATUS_SCHEDULED',
-      winner: old.winner || ''
+      winner: old.winner || '',
+      home_score_90: old.home_score_90 !== '' && old.home_score_90 !== undefined ? old.home_score_90 : '',
+      away_score_90: old.away_score_90 !== '' && old.away_score_90 !== undefined ? old.away_score_90 : ''
     };
   });
   Object.keys(BRACKET_SLOTS).forEach(function(id){
@@ -195,7 +197,7 @@ function normalizeResults(){
 function writeResultsMap(map){
   var rows=MATCHES.map(function(m){
     var r=map[m.id] || emptyResultForMatch(m);
-    return [m.id, r.home || '', r.away || '', r.home_score, r.away_score, r.status || 'STATUS_SCHEDULED', r.winner || ''];
+    return [m.id, r.home || '', r.away || '', r.home_score, r.away_score, r.status || 'STATUS_SCHEDULED', r.winner || '', r.home_score_90 !== undefined ? r.home_score_90 : '', r.away_score_90 !== undefined ? r.away_score_90 : ''];
   });
   writeRows('Results', SHEETS.Results, rows);
 }
@@ -227,7 +229,9 @@ function refreshResults(){
       home_score:x.home_score !== undefined && x.home_score !== null ? x.home_score : results[id].home_score,
       away_score:x.away_score !== undefined && x.away_score !== null ? x.away_score : results[id].away_score,
       status:status,
-      winner:winner || results[id].winner || ''
+      winner:winner || results[id].winner || '',
+      home_score_90:x.home_score_90 !== undefined && x.home_score_90 !== null ? x.home_score_90 : (results[id].home_score_90 || ''),
+      away_score_90:x.away_score_90 !== undefined && x.away_score_90 !== null ? x.away_score_90 : (results[id].away_score_90 || '')
     };
     matched++;
   });
@@ -246,6 +250,16 @@ function installAutoRefreshTrigger(){
   return {ok:true, message:'Automatisk uppdatering installerad var 15:e minut.'};
 }
 
+function regulationScore_(competitor){
+  // ESPN brukar lägga halvlekar/perioder i linescores. För fotboll är 90-minutersresultatet summa period 1 + 2.
+  var lines = competitor && competitor.linescores ? competitor.linescores : [];
+  if(lines.length >= 2){
+    var a = Number(lines[0].value !== undefined ? lines[0].value : lines[0].score || 0);
+    var b = Number(lines[1].value !== undefined ? lines[1].value : lines[1].score || 0);
+    return a + b;
+  }
+  return '';
+}
 function fetchEspnResults_(){
   var dates=['20260628','20260629','20260630','20260701','20260702','20260703','20260704','20260705','20260706','20260707','20260709','20260710','20260711','20260712','20260714','20260715','20260718','20260719'];
   var out=[];
@@ -261,12 +275,16 @@ function fetchEspnResults_(){
         var away=(comp.competitors||[]).filter(function(c){return c.homeAway==='away';})[0];
         if(!home || !away) return;
         var winner=(comp.competitors||[]).filter(function(c){return c.winner===true;})[0];
+        var home90 = regulationScore_(home);
+        var away90 = regulationScore_(away);
         out.push({
           id:String(ev.id), date: ev.date ? ev.date.slice(0,10) : '',
           home: home.team ? (home.team.displayName || home.team.shortDisplayName || '') : '',
           away: away.team ? (away.team.displayName || away.team.shortDisplayName || '') : '',
           home_score: home.score !== undefined ? home.score : '',
           away_score: away.score !== undefined ? away.score : '',
+          home_score_90: home90 !== '' ? home90 : (home.score !== undefined ? home.score : ''),
+          away_score_90: away90 !== '' ? away90 : (away.score !== undefined ? away.score : ''),
           status: ev.status && ev.status.type && ev.status.type.completed ? 'Complete' : (ev.status && ev.status.type ? ev.status.type.name : 'STATUS_SCHEDULED'),
           winner: winner && winner.team ? (winner.team.displayName || winner.team.shortDisplayName || '') : ''
         });
@@ -276,12 +294,19 @@ function fetchEspnResults_(){
   return out;
 }
 
+function scoreForPoints_(r){
+  // Poäng räknas på 90 minuter. Finalresultatet home_score/away_score används fortfarande för trädet.
+  var h90 = r.home_score_90 !== '' && r.home_score_90 !== undefined ? r.home_score_90 : r.home_score;
+  var a90 = r.away_score_90 !== '' && r.away_score_90 !== undefined ? r.away_score_90 : r.away_score;
+  return {home:h90, away:a90};
+}
 function pointsForPrediction(p,r){
   if(!p || !r || !isCompleteStatus(r.status)) return 0;
-  var exact = Number(p.pred_home)===Number(r.home_score) && Number(p.pred_away)===Number(r.away_score);
+  var s = scoreForPoints_(r);
+  var exact = Number(p.pred_home)===Number(s.home) && Number(p.pred_away)===Number(s.away);
   if(exact) return 2;
   var po=String(p.pred_outcome || calcOutcome(p.pred_home,p.pred_away)).toUpperCase();
-  return po && po===calcOutcome(r.home_score,r.away_score) ? 1 : 0;
+  return po && po===calcOutcome(s.home,s.away) ? 1 : 0;
 }
 function scorePlayer(player, data){
   var matchPts=0, bonusPts=0, exact=0, outcomeRight=0;
@@ -334,7 +359,8 @@ function latestComment(data, scoreboard){
   var ptsPlayers=data.players.filter(function(p){
     return data.predictions.some(function(pr){ return String(pr.player_id)===String(p.player_id) && String(pr.match_id)===String(last.match_id) && pointsForPrediction(pr,last)>0; });
   }).length;
-  var text = svName(last.home) + ' – ' + svName(last.away) + ' slutade ' + last.home_score + '–' + last.away_score + '. ' + ptsPlayers + ' av ' + data.players.length + ' fick poäng.';
+  var ps = scoreForPoints_(last);
+  var text = svName(last.home) + ' – ' + svName(last.away) + ' gav poäng på 90-minutersresultatet ' + ps.home + '–' + ps.away + '. ' + ptsPlayers + ' av ' + data.players.length + ' fick poäng.';
   if(leader) text += ' ' + leader.name + ' leder med ' + leader.total_points + ' poäng.';
   return text;
 }

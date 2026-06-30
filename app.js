@@ -173,12 +173,20 @@ function resolvedMatch(m){
   return {...m, home:r.home || participantFromSlot(slots.home) || m.home, away:r.away || participantFromSlot(slots.away) || m.away};
 }
 function prediction(playerId, matchId){ return state.predictions.find(p=>String(p.player_id)===String(playerId) && String(p.match_id)===String(matchId)); }
+function scoreForPoints(r){
+  // Poäng räknas på 90 minuter. Slutresultatet home_score/away_score används fortfarande för trädet.
+  return {
+    home: r.home_score_90 !== '' && r.home_score_90 !== undefined ? r.home_score_90 : r.home_score,
+    away: r.away_score_90 !== '' && r.away_score_90 !== undefined ? r.away_score_90 : r.away_score
+  };
+}
 function pointsForPrediction(p,r){
   if(!p || !r || r.status!=='Complete') return 0;
-  const exact=Number(p.pred_home)===Number(r.home_score) && Number(p.pred_away)===Number(r.away_score);
+  const s=scoreForPoints(r);
+  const exact=Number(p.pred_home)===Number(s.home) && Number(p.pred_away)===Number(s.away);
   if(exact) return 2;
   const po=String(p.pred_outcome || outcome(p.pred_home,p.pred_away)).toUpperCase();
-  return po && po===outcome(r.home_score,r.away_score) ? 1 : 0;
+  return po && po===outcome(s.home,s.away) ? 1 : 0;
 }
 function statBars(items,total){
   if(!items || !items.length) return '<p class="muted">Ingen data ännu.</p>';
